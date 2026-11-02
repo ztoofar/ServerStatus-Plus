@@ -13,10 +13,7 @@
       "name": "Server 01",
       "type": "KVM",
       "host": "",
-      "location": "Hong Kong",
-      "group": "",
-      "tags": [],
-      "disabled": false
+      "location": "Hong Kong"
     }
   ]
 }

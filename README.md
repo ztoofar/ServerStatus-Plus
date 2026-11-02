@@ -116,14 +116,13 @@ tail -f /tmp/serverstatus_client.log
       "name": "Server 01",
       "type": "KVM",
       "host": "",
-      "location": "Hong Kong",
-      "disabled": false
+      "location": "Hong Kong"
     }
   ]
 }
 ```
 
-缺失的 `listen`、`http_listen`、`site`、`id`、`name`、`group`、`tags` 会自动使用默认值：`listen=":35601"`、`http_listen=":8080"`、标题为 `ServerStatus-Plus`。也可以使用 [config.example.json](config.example.json) 的扩展格式。
+缺失的 `listen`、`http_listen`、`site`、`id`、`name` 会自动使用默认值：`listen=":35601"`、`http_listen=":8080"`、标题为 `ServerStatus-Plus`。`disabled` 缺省为 `false`，设置为 `true` 可隐藏该节点。也可以使用 [config.example.json](config.example.json) 的扩展格式。
 
 安装脚本添加的新节点会插入 `servers` 数组最前面，因此显示在表格最上方。
 

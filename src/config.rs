@@ -35,10 +35,6 @@ pub struct Server {
     #[serde(default)]
     pub location: String,
     #[serde(default)]
-    pub group: String,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
     pub disabled: bool,
 }
 
@@ -80,9 +76,6 @@ impl Config {
             }
             if server.name.is_empty() {
                 server.name = server.username.clone();
-            }
-            if server.tags.is_empty() {
-                server.tags = Vec::new();
             }
         }
     }

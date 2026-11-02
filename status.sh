@@ -255,10 +255,7 @@ Write_server_config(){
       "name": "Server 01",
       "type": "KVM",
       "host": "",
-      "location": "Hong Kong",
-      "group": "",
-      "tags": [],
-      "disabled": false
+      "location": "Hong Kong"
     }
   ]
 }
@@ -514,7 +511,7 @@ List_ServerStatus_server(){
 		now_text_type=$(echo -e "${now_text}"|grep "type"|awk -F ": " '{print $2}')
 		now_text_location=$(echo -e "${now_text}"|grep "location"|awk -F ": " '{print $2}')
 		now_text_disabled=$(echo -e "${now_text}"|grep "disabled"|awk -F ": " '{print $2}')
-		if [[ ${now_text_disabled} == "false" ]]; then
+		if [[ ${now_text_disabled} != "true" ]]; then
 			now_text_disabled_status="${Green_font_prefix}启用${Font_color_suffix}"
 		else
 			now_text_disabled_status="${Red_font_prefix}禁用${Font_color_suffix}"
@@ -549,7 +546,7 @@ Add_ServerStatus_server(){
 	local exists
 	exists="$(${jq_file} -r --arg u "${username_s}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
 	[[ -n "${exists}" ]] && echo -e "${Error} 用户名已被使用 !" && exit 1
-	Jq_edit '.servers = ([{"id": $id, "username": $username, "password": $password, "name": $name, "type": $type, "host": "None", "location": $location, "group": "", "tags": [], "disabled": false}] + (.servers // []))' \
+	Jq_edit '.servers = ([{"id": $id, "username": $username, "password": $password, "name": $name, "type": $type, "host": "None", "location": $location}] + (.servers // []))' \
 		--arg id "${username_s}" --arg username "${username_s}" --arg password "${password_s}" --arg name "${name_s}" --arg type "${type_s}" --arg location "${location_s}"
 	echo -e "${Info} 添加节点成功 ${Green_font_prefix}[ 节点名称: ${name_s}, 节点用户名: ${username_s}, 节点密码: ${password_s} ]${Font_color_suffix} !"
 }

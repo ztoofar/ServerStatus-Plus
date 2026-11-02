@@ -12,10 +12,6 @@ pub struct Node {
     pub node_type: String,
     pub host: String,
     pub location: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub group: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tags: Vec<String>,
     pub connected: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub connected_via: String,
@@ -90,8 +86,6 @@ impl Hub {
                 node_type: server.node_type.clone(),
                 host: server.host.clone(),
                 location: server.location.clone(),
-                group: server.group.clone(),
-                tags: server.tags.clone(),
                 connected: false,
                 connected_via: String::new(),
                 last_seen: 0,

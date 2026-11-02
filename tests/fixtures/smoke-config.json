@@ -13,10 +13,7 @@
       "name": "Test Node",
       "type": "KVM",
       "host": "127.0.0.1",
-      "location": "Local",
-      "group": "test",
-      "tags": ["ipv6"],
-      "disabled": false
+      "location": "Local"
     },
     {
       "id": "hidden",

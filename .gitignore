@@ -1,0 +1,14 @@
+# 本地临时文件（可能包含真实凭据）
+.tmp-inspect/
+/status.py
+/config.json
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Rust
+/target/
+
+# 前端依赖
+/web/node_modules/

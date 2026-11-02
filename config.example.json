@@ -1,0 +1,22 @@
+{
+  "listen": ":35601",
+  "http_listen": ":8080",
+  "site": {
+    "title": "ServerStatus-Plus",
+    "announcement": ""
+  },
+  "servers": [
+    {
+      "id": "s01",
+      "username": "s01",
+      "password": "changeme",
+      "name": "Server 01",
+      "type": "KVM",
+      "host": "",
+      "location": "Hong Kong",
+      "group": "",
+      "tags": [],
+      "disabled": false
+    }
+  ]
+}

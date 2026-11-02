@@ -140,6 +140,7 @@ tail -f /tmp/serverstatus_client.log
   "password": "password",
   "family": 0,
   "interval": 1,
+  "load_mode": "loadavg",
   "online_check_v4": "www.aliyun.com:443",
   "online_check_v6": "www.aliyun.com:443",
   "interfaces": []
@@ -148,6 +149,7 @@ tail -f /tmp/serverstatus_client.log
 
 - `family`：`0` 自动、`4` 仅 IPv4、`6` 仅 IPv6。
 - `interval`：上报间隔秒数，默认 `1`，必须小于服务端 30 秒空闲超时（建议 `<= 25`）。
+- `load_mode`：`loadavg`（默认，系统 1 分钟平均负载，与 `uptime` 一致）或 `connections`（原版 Toyo 语义，已建立 TCP 的唯一远端 IP 数）。
 - `interfaces`：留空自动选择物理网卡；也可填写网卡名列表。
 - 修改配置后需重启客户端服务。
 

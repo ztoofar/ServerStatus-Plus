@@ -66,11 +66,11 @@ class ConnectError(Exception):
 class ClientConfig(object):
     __slots__ = (
         "server", "port", "username", "password", "family", "interval",
-        "online_check_v4", "online_check_v6", "interfaces",
+        "online_check_v4", "online_check_v6", "interfaces", "load_mode",
     )
 
     def __init__(self, server, port, username, password, family, interval,
-                 online_check_v4, online_check_v6, interfaces):
+                 online_check_v4, online_check_v6, interfaces, load_mode):
         self.server = server
         self.port = port
         self.username = username
@@ -80,6 +80,7 @@ class ClientConfig(object):
         self.online_check_v4 = online_check_v4
         self.online_check_v6 = online_check_v6
         self.interfaces = interfaces
+        self.load_mode = load_mode
 
 
 class Logger(object):
@@ -156,6 +157,9 @@ def load_config(path):
 
     online_v4 = str(raw.get("online_check_v4") or DEFAULT_ONLINE_V4).strip()
     online_v6 = str(raw.get("online_check_v6") or DEFAULT_ONLINE_V6).strip()
+    load_mode = str(raw.get("load_mode") or "loadavg").strip().lower()
+    if load_mode not in ("loadavg", "connections"):
+        raise ConfigError("load_mode 必须是 loadavg 或 connections")
 
     raw_interfaces = raw.get("interfaces") or []
     if not isinstance(raw_interfaces, list):
@@ -164,7 +168,7 @@ def load_config(path):
 
     return ClientConfig(
         server, port, username, password, family, interval,
-        online_v4, online_v6, interfaces,
+        online_v4, online_v6, interfaces, load_mode,
     )
 
 
@@ -491,6 +495,27 @@ def read_established_load():
     return len(addresses)
 
 
+def parse_loadavg(text):
+    try:
+        return round(float(text.split()[0]), 2)
+    except (ValueError, IndexError):
+        return 0.0
+
+
+def read_loadavg():
+    try:
+        with open("/proc/loadavg", "r") as handle:
+            return parse_loadavg(handle.readline())
+    except OSError:
+        return 0.0
+
+
+def read_load(config):
+    if config.load_mode == "connections":
+        return float(read_established_load())
+    return read_loadavg()
+
+
 def parse_target(target):
     target = str(target).strip()
     if not target:
@@ -625,13 +650,13 @@ def authenticate(sock, config):
     raise AuthError("未知网络模式")
 
 
-def build_payload(cpu_sampler, network_sampler, disk_sampler):
+def build_payload(config, cpu_sampler, network_sampler, disk_sampler):
     memory_total, memory_used, swap_total, swap_used = read_memory()
     hdd_total, hdd_used = disk_sampler.sample()
     rx_speed, tx_speed, rx_total, tx_total = network_sampler.sample()
     return {
         "uptime": read_uptime(),
-        "load": float(read_established_load()),
+        "load": read_load(config),
         "memory_total": memory_total,
         "memory_used": memory_used,
         "swap_total": swap_total,
@@ -679,7 +704,7 @@ def run(config, once, logger):
                     online = check_online(check_target, check_family)
                     last_online_check = now
 
-                payload = build_payload(cpu_sampler, network_sampler, disk_sampler)
+                payload = build_payload(config, cpu_sampler, network_sampler, disk_sampler)
                 payload[check_field] = bool(online)
                 line = "update " + json.dumps(payload, separators=(",", ":")) + "\n"
                 sock.sendall(line.encode("utf-8"))

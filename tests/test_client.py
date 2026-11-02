@@ -78,6 +78,11 @@ class MetricHelperTests(unittest.TestCase):
         client.parse_tcp_table(lines, False, addresses)
         self.assertEqual(addresses, {"127.0.0.1", "127.0.0.2"})
 
+    def test_parse_loadavg(self):
+        self.assertEqual(client.parse_loadavg("0.12 0.34 0.56 1/123 4567\n"), 0.12)
+        self.assertEqual(client.parse_loadavg("1.5 1.2 0.9 2/100 9999\n"), 1.5)
+        self.assertEqual(client.parse_loadavg(""), 0.0)
+
     def test_parse_target(self):
         self.assertEqual(
             client.parse_target("www.example.com:443"), ("www.example.com", 443)
@@ -113,6 +118,7 @@ class ConfigTests(unittest.TestCase):
         config = client.load_config(path)
         self.assertEqual(config.family, 0)
         self.assertEqual(config.interval, 1)
+        self.assertEqual(config.load_mode, "loadavg")
         self.assertEqual(config.online_check_v4, "www.aliyun.com:443")
         self.assertEqual(config.online_check_v6, "www.aliyun.com:443")
         self.assertEqual(config.interfaces, [])
@@ -143,6 +149,25 @@ class ConfigTests(unittest.TestCase):
             "family": 6,
         })
         self.assertEqual(client.load_config(path).family, 6)
+
+    def test_load_mode_connections(self):
+        path = self.write_config({
+            "server": "127.0.0.1",
+            "username": "s01",
+            "password": "pass",
+            "load_mode": "connections",
+        })
+        self.assertEqual(client.load_config(path).load_mode, "connections")
+
+    def test_invalid_load_mode(self):
+        path = self.write_config({
+            "server": "127.0.0.1",
+            "username": "s01",
+            "password": "pass",
+            "load_mode": "bogus",
+        })
+        with self.assertRaises(client.ConfigError):
+            client.load_config(path)
 
 
 if __name__ == "__main__":

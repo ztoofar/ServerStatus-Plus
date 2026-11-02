@@ -282,6 +282,7 @@ Write_client_config(){
   "password": "${password_s}",
   "family": 0,
   "interval": 1,
+  "load_mode": "loadavg",
   "online_check_v4": "www.aliyun.com:443",
   "online_check_v6": "www.aliyun.com:443",
   "interfaces": []

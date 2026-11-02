@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useStatus } from './composables/useStatus'
 import { formatBytes, formatRate, formatUptime, percent } from './format'
 import MeterBar from './components/MeterBar.vue'
-import StatusPill from './components/StatusPill.vue'
 import type { ServerStatus } from './types'
 
 const { status, error } = useStatus()
@@ -103,11 +102,9 @@ function uptime(server: ServerStatus) {
               @keydown.space.prevent="toggle(server)"
             >
               <td class="status-cell">
-                <template v-if="server.connected">
-                  <StatusPill label="IPv4" :on="server.online4" />
-                  <StatusPill label="IPv6" :on="server.online6" />
-                </template>
-                <span v-else class="offline-label">离线</span>
+                <span class="status-label" :class="{ online: server.connected }">
+                  {{ server.connected ? '在线' : '离线' }}
+                </span>
               </td>
               <td class="name-cell">{{ server.name }}</td>
               <td>{{ server.type || '–' }}</td>

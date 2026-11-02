@@ -190,50 +190,33 @@ button {
   white-space: nowrap;
 }
 
-.status-cell .pill {
-  margin-right: 6px;
+.status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+  font-size: 12px;
 }
 
-.status-cell .pill:last-child {
-  margin-right: 0;
+.status-label::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.status-label.online {
+  color: var(--ok);
+}
+
+.status-label.online::before {
+  background: var(--ok);
 }
 
 .name-cell {
   color: var(--text);
   font-weight: 600;
-}
-
-.offline-label {
-  color: var(--danger);
-  font-size: 12px;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.pill-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-
-.pill.on {
-  color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 35%, var(--border));
-}
-
-.pill.on .pill-dot {
-  background: var(--ok);
 }
 
 .meter-cell {

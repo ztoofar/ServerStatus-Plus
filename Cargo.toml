@@ -1,6 +1,6 @@
 [package]
 name = "sergate"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 rust-version = "1.85"
 
@@ -10,7 +10,6 @@ async-stream = "0.3"
 axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 futures-util = { version = "0.3", features = ["sink"] }
-libc = "0.2"
 mime_guess = "2"
 rust-embed = "8"
 serde = { version = "1", features = ["derive"] }
@@ -25,10 +24,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [[bin]]
 name = "sergate"
 path = "src/main.rs"
-
-[[bin]]
-name = "sergate-client"
-path = "src/bin/client.rs"
 
 [profile.release]
 opt-level = "z"

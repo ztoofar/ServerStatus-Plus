@@ -10,7 +10,7 @@ use std::net::{SocketAddr, TcpListener as StdTcpListener};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
@@ -22,7 +22,7 @@ struct Args {
     verbose: bool,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let args = Args::parse();
     let level = if args.verbose { "debug" } else { "info" };
@@ -41,8 +41,7 @@ async fn main() -> Result<()> {
         hub: hub.clone(),
     };
 
-    let tcp_listener =
-        bind_dual_stack(&listen).with_context(|| format!("bind tcp {listen}"))?;
+    let tcp_listener = bind_dual_stack(&listen).with_context(|| format!("bind tcp {listen}"))?;
     let http_listener =
         bind_dual_stack(&http_listen).with_context(|| format!("bind http {http_listen}"))?;
 
@@ -70,11 +69,25 @@ async fn main() -> Result<()> {
 }
 
 fn bind_dual_stack(addr: &str) -> Result<TcpListener> {
-    let addr = if addr.starts_with(':') {
+    let wildcard = addr.starts_with(':');
+    let v6_addr = if wildcard {
         format!("[::]{addr}")
     } else {
         addr.to_string()
     };
+
+    match bind(&v6_addr) {
+        Ok(listener) => Ok(listener),
+        Err(err) if wildcard => {
+            warn!(%addr, error = %err, "IPv6 dual-stack bind failed, falling back to IPv4");
+            let v4_addr = format!("0.0.0.0{addr}");
+            bind(&v4_addr).with_context(|| format!("bind tcp {v4_addr}"))
+        }
+        Err(err) => Err(err).with_context(|| format!("bind tcp {v6_addr}")),
+    }
+}
+
+fn bind(addr: &str) -> Result<TcpListener> {
     let sockaddr: SocketAddr = addr
         .parse()
         .with_context(|| format!("invalid listen address {addr}"))?;

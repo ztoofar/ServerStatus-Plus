@@ -4,12 +4,12 @@ export PATH
 
 #=================================================
 #	System Required: Debian 12/13 (client), CentOS/Debian/Ubuntu (server)
-#	Description: ServerStatus-Plus client + server installer
-#	Version: 2.0.2
+#	Description: ServerStatus-Plus Rust server + Python 3 client installer
+#	Version: 2.1.0
 #	Maintainer: ztoofar - https://github.com/ztoofar/ServerStatus-Plus
 #=================================================
 
-sh_ver="2.0.2"
+sh_ver="2.1.0"
 filepath=$(cd "$(dirname "$0")"; pwd)
 file_1=$(echo -e "${filepath}"|awk -F "$0" '{print $1}')
 file="/usr/local/ServerStatus"
@@ -17,6 +17,8 @@ server_file="/usr/local/ServerStatus/server"
 server_conf="/usr/local/ServerStatus/server/config.json"
 client_file="/usr/local/ServerStatus/client"
 client_conf="/usr/local/ServerStatus/client/config.json"
+client_script="${client_file}/sergate-client.py"
+client_legacy_bin="${client_file}/sergate-client"
 client_log_file="/tmp/serverstatus_client.log"
 server_log_file="/tmp/serverstatus_server.log"
 jq_file="${file}/jq"
@@ -72,8 +74,31 @@ check_sys(){
 check_installed_server_status(){
 	[[ ! -e "${server_file}/sergate" ]] && echo -e "${Error} ServerStatus 服务端没有安装，请检查 !" && exit 1
 }
+client_installed(){
+	[[ -e "${client_script}" || -e "${client_legacy_bin}" ]]
+}
+check_python3(){
+	if ! command -v python3 >/dev/null 2>&1; then
+		echo -e "${Error} 未找到 python3，请先安装 Python 3 !"
+		echo -e "${Tip} Debian/Ubuntu: apt install -y python3；CentOS: yum install -y python3"
+		exit 1
+	fi
+	if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 6) else 1)' 2>/dev/null; then
+		echo -e "${Error} 需要 Python 3.6 或更高版本 !"
+		exit 1
+	fi
+}
+check_client_script(){
+	if [[ ! -e "${client_script}" ]]; then
+		echo -e "${Error} 检测到旧版 Rust 客户端，请先执行 更新 客户端 !"
+		exit 1
+	fi
+}
 check_installed_client_status(){
-	[[ ! -e "${client_file}/sergate-client" ]] && echo -e "${Error} ServerStatus 客户端没有安装，请检查 !" && exit 1
+	if ! client_installed; then
+		echo -e "${Error} ServerStatus 客户端没有安装，请检查 !"
+		exit 1
+	fi
 }
 check_pid_server(){
 	PID=`ps -ef| grep -E '(^|/)sergate( |$)'| grep -v grep| grep -v ".sh"| grep -v "init.d"| grep -v "service"| awk '{print $2}'`
@@ -109,31 +134,33 @@ Download_Server_Status_server(){
 	rm -f "/tmp/sergate"
 }
 Download_Server_Status_client(){
+	check_python3
 	cd "/tmp"
-	case "$(uname -m)" in
-		x86_64|amd64) binary="sergate-client-linux-amd64" ;;
-		aarch64|arm64) binary="sergate-client-linux-arm64" ;;
-		*) echo -e "${Error} 不支持的 CPU 架构: $(uname -m)" && exit 1 ;;
-	esac
-	rm -f "sergate-client"
-	if ! wget --no-check-certificate -O "sergate-client" "${repo_raw}/bin/${binary}"; then
+	rm -f "sergate-client.py"
+	if ! wget --no-check-certificate -O "sergate-client.py" "${repo_raw}/client/sergate-client.py"; then
 		echo -e "${Error} ServerStatus 客户端下载失败 !" && exit 1
 	fi
-	[[ ! -s "sergate-client" ]] && echo -e "${Error} ServerStatus 客户端下载失败 !" && exit 1
+	[[ ! -s "sergate-client.py" ]] && echo -e "${Error} ServerStatus 客户端下载失败 !" && exit 1
+	if ! python3 -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "/tmp/sergate-client.py"; then
+		echo -e "${Error} ServerStatus 客户端脚本校验失败 !"
+		rm -f "/tmp/sergate-client.py"
+		exit 1
+	fi
 	cd "${file_1}"
 	[[ ! -e "${file}" ]] && mkdir "${file}"
 	[[ ! -e "${client_file}" ]] && mkdir "${client_file}"
-	[[ -e "${client_file}/sergate-client" ]] && mv "${client_file}/sergate-client" "${client_file}/sergate-client1"
-	mv "/tmp/sergate-client" "${client_file}/sergate-client"
-	chmod +x "${client_file}/sergate-client"
-	if [[ ! -e "${client_file}/sergate-client" ]]; then
+	[[ -e "${client_script}" ]] && mv "${client_script}" "${client_script}1"
+	mv "/tmp/sergate-client.py" "${client_script}"
+	chmod 755 "${client_script}"
+	if [[ ! -e "${client_script}" ]]; then
 		echo -e "${Error} ServerStatus 客户端安装失败 !"
-		[[ -e "${client_file}/sergate-client1" ]] && mv "${client_file}/sergate-client1" "${client_file}/sergate-client"
-		rm -f "/tmp/sergate-client"
+		[[ -e "${client_script}1" ]] && mv "${client_script}1" "${client_script}"
+		rm -f "/tmp/sergate-client.py"
 		exit 1
 	fi
-	[[ -e "${client_file}/sergate-client1" ]] && rm -f "${client_file}/sergate-client1"
-	rm -f "/tmp/sergate-client"
+	[[ -e "${client_script}1" ]] && rm -f "${client_script}1"
+	rm -f "/tmp/sergate-client.py"
+	rm -f "${client_legacy_bin}"
 }
 Service_Server_Status_server(){
 	if [[ ${release} = "centos" ]]; then
@@ -588,7 +615,11 @@ Install_ServerStatus_server(){
 	echo -e "${Info} 面板端口：${server_http_port_s} ，网页已内嵌到 sergate，无需单独部署 web 目录。"
 }
 Install_ServerStatus_client(){
-	[[ -e "${client_file}/sergate-client" ]] && echo -e "${Error} 检测到 ServerStatus 客户端已安装 !" && exit 1
+	if client_installed; then
+		echo -e "${Error} 检测到 ServerStatus 客户端已安装，请使用 更新 功能 !"
+		exit 1
+	fi
+	check_python3
 	check_sys
 	echo -e "${Info} 开始设置 用户配置..."
 	Set_config_client
@@ -612,6 +643,7 @@ Update_ServerStatus_server(){
 }
 Update_ServerStatus_client(){
 	check_installed_client_status
+	check_python3
 	check_pid_client
 	[[ ! -z ${PID} ]] && /etc/init.d/status-client stop
 	Download_Server_Status_client
@@ -647,7 +679,7 @@ Uninstall_ServerStatus_server(){
 	if [[ ${unyn} == [Yy] ]]; then
 		check_pid_server
 		[[ ! -z $PID ]] && kill -9 ${PID}
-		if [[ -e "${client_file}/sergate-client" ]]; then
+		if client_installed; then
 			rm -rf "${server_file}"
 		else
 			rm -rf "${file}"
@@ -665,18 +697,22 @@ Uninstall_ServerStatus_server(){
 }
 Start_ServerStatus_client(){
 	check_installed_client_status
+	check_client_script
+	check_python3
 	check_pid_client
 	[[ ! -z ${PID} ]] && echo -e "${Error} ServerStatus 正在运行，请检查 !" && exit 1
 	/etc/init.d/status-client start
 }
 Stop_ServerStatus_client(){
 	check_installed_client_status
+	check_client_script
 	check_pid_client
 	[[ -z ${PID} ]] && echo -e "${Error} ServerStatus 没有运行，请检查 !" && exit 1
 	/etc/init.d/status-client stop
 }
 Restart_ServerStatus_client(){
 	check_installed_client_status
+	check_client_script
 	check_pid_client
 	[[ ! -z ${PID} ]] && /etc/init.d/status-client stop
 	/etc/init.d/status-client start
@@ -741,6 +777,9 @@ Update_Shell(){
 		Service_Server_Status_server
 	fi
 	wget -N --no-check-certificate "${repo_raw}/status.sh" && chmod +x status.sh
+	if [[ -e "${client_legacy_bin}" && ! -e "${client_script}" ]]; then
+		echo -e "${Tip} 检测到旧版 Rust 客户端，请进入客户端菜单执行「更新 客户端」以迁移到 Python 客户端。"
+	fi
 	echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
 }
 menu_client(){
@@ -763,7 +802,7 @@ echo && echo -e "  ServerStatus 一键安装管理脚本 ${Red_font_prefix}[v${s
  ${Green_font_prefix} 9.${Font_color_suffix} 查看 客户端日志
 ————————————
  ${Green_font_prefix}10.${Font_color_suffix} 切换为 服务端菜单" && echo
-if [[ -e "${client_file}/sergate-client" ]]; then
+if client_installed; then
 	check_pid_client
 	if [[ ! -z "${PID}" ]]; then
 		echo -e " 当前状态: 客户端 ${Green_font_prefix}已安装${Font_color_suffix} 并 ${Green_font_prefix}已启动${Font_color_suffix}"

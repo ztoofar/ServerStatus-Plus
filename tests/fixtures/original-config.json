@@ -1,0 +1,22 @@
+{
+  "servers": [
+    {
+      "username": "s01",
+      "password": "password",
+      "name": "Mainserver 1",
+      "type": "Dedicated Server",
+      "host": "No",
+      "location": "Austria",
+      "disabled": false
+    },
+    {
+      "username": "hidden",
+      "password": "password",
+      "name": "Secret",
+      "type": "Nothing",
+      "host": "No",
+      "location": "Nowhere",
+      "disabled": true
+    }
+  ]
+}

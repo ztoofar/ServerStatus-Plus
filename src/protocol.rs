@@ -1,5 +1,5 @@
 use crate::hub::{ConnectError, Hub, Update};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use futures_util::{SinkExt, StreamExt};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock};

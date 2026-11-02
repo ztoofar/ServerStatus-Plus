@@ -1,0 +1,32 @@
+{
+  "listen": ":35601",
+  "http_listen": ":18080",
+  "site": {
+    "title": "ServerStatus-Plus Test",
+    "announcement": "smoke test"
+  },
+  "servers": [
+    {
+      "id": "s01",
+      "username": "s01",
+      "password": "pass",
+      "name": "Test Node",
+      "type": "KVM",
+      "host": "127.0.0.1",
+      "location": "Local",
+      "group": "test",
+      "tags": ["ipv6"],
+      "disabled": false
+    },
+    {
+      "id": "hidden",
+      "username": "hidden",
+      "password": "pass",
+      "name": "Hidden Node",
+      "type": "KVM",
+      "host": "",
+      "location": "",
+      "disabled": true
+    }
+  ]
+}

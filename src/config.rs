@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -99,7 +99,10 @@ impl Config {
                 bail!("servers[{i}] ({}): password is required", server.username);
             }
             if server.username.contains(':') {
-                bail!("servers[{i}] ({}): username must not contain ':'", server.username);
+                bail!(
+                    "servers[{i}] ({}): username must not contain ':'",
+                    server.username
+                );
             }
             if !usernames.insert(server.username.clone()) {
                 bail!("servers[{i}] ({}): duplicate username", server.username);
@@ -108,7 +111,11 @@ impl Config {
                 bail!("servers[{i}] ({}): id is required", server.username);
             }
             if !ids.insert(server.id.clone()) {
-                bail!("servers[{i}] ({}): duplicate id {}", server.username, server.id);
+                bail!(
+                    "servers[{i}] ({}): duplicate id {}",
+                    server.username,
+                    server.id
+                );
             }
         }
 
@@ -126,4 +133,25 @@ fn default_listen() -> String {
 
 fn default_http_listen() -> String {
     ":8080".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_original_toyo_config() {
+        let json = include_str!("../tests/fixtures/original-config.json");
+        let mut cfg: Config = serde_json::from_str(json).expect("parse original config");
+        cfg.normalize();
+        cfg.validate().expect("validate original config");
+
+        assert_eq!(cfg.listen, ":35601");
+        assert_eq!(cfg.http_listen, ":8080");
+        assert_eq!(cfg.site.title, "ServerStatus-Plus");
+        assert_eq!(cfg.site.announcement, "");
+        assert_eq!(cfg.servers[0].id, "s01");
+        assert_eq!(cfg.servers[0].name, "Mainserver 1");
+        assert!(cfg.servers[1].disabled);
+    }
 }

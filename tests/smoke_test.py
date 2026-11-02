@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end smoke test for the ServerStatus-Plus Rust backend."""
 
+import http.client
 import json
 import socket
 import time
@@ -27,9 +28,33 @@ def tcp_connect(host, family=socket.AF_INET):
     return sock
 
 
-def api(path):
+def fetch(path):
     with urllib.request.urlopen(HTTP + path, timeout=5) as response:
-        return json.loads(response.read().decode("utf-8"))
+        return response.read(), response.headers
+
+
+def api(path):
+    body, _headers = fetch(path)
+    return json.loads(body.decode("utf-8"))
+
+
+def raw_request(method, path):
+    connection = http.client.HTTPConnection("127.0.0.1", 18080, timeout=5)
+    try:
+        connection.request(method, path)
+        response = connection.getresponse()
+        body = response.read()
+        return response.status, dict(response.getheaders()), body
+    finally:
+        connection.close()
+
+
+def header(headers, name):
+    wanted = name.lower()
+    for key, value in headers.items():
+        if key.lower() == wanted:
+            return value
+    return None
 
 
 def login(host, family=socket.AF_INET, username="s01", password="pass"):
@@ -82,22 +107,84 @@ def main():
     assert node["cpu"] == 12.5, node
 
     legacy = api("/json/stats.json")
+    assert isinstance(legacy["updated"], str), legacy
     assert legacy["servers"][0]["uptime"] == "01:00:00", legacy
+    assert legacy["servers"][0]["cpu"] == 12, legacy
+    assert isinstance(legacy["servers"][0]["cpu"], int), legacy
 
     with urllib.request.urlopen(HTTP + "/api/events", timeout=5) as response:
         first = response.readline().decode("utf-8")
     assert first.startswith("data: "), first
 
-    with urllib.request.urlopen(HTTP + "/", timeout=5) as response:
-        html = response.read().decode("utf-8")
-    assert "ServerStatus" in html, html[:200]
-    assert "/assets/" in html, html[:400]
+    # Original static frontend.
+    body, headers = fetch("/")
+    html = body.decode("utf-8")
+    assert headers.get("Content-Type", "").startswith("text/html"), headers
+    assert "no-store" in headers.get("Cache-Control", ""), headers
+    assert 'id="servers"' in html, html[:200]
+    assert "css/light.css" in html, html[:400]
+    assert "js/serverstatus.js" in html, html[:400]
+    assert "/assets/" not in html, html[:400]
+    assert "{{SITE_" not in html, html[:400]
+    assert status["site"]["title"] in html, status["site"]
+    if status["site"]["announcement"]:
+        assert status["site"]["announcement"] in html, status["site"]
+    else:
+        assert "欢迎使用 ServerStatus-Plus" in html, status["site"]
+    assert "fucking" not in html, html[:400]
+
+    body, headers = fetch("/css/light.css")
+    assert headers.get("Content-Type") == "text/css; charset=utf-8", headers
+    assert "no-cache" in headers.get("Cache-Control", ""), headers
+    assert b"background: #ebebeb" in body
+
+    body, headers = fetch("/js/serverstatus.js")
+    js = body.decode("utf-8")
+    assert headers.get("Content-Type") == "application/javascript; charset=utf-8", headers
+    assert "setInterval(uptime, 2000)" in js
+    assert "textContent" in js
+    assert "fuck" not in js
+
+    body, headers = fetch("/img/light.png")
+    assert headers.get("Content-Type") == "image/png", headers
+    assert body.startswith(b"\x89PNG"), body[:8]
+
+    body, headers = fetch("/favicon.ico")
+    assert headers.get("Content-Type", "").startswith("image/"), headers
+    assert len(body) > 0
+
+    body, headers = fetch("/robots.txt")
+    assert headers.get("Content-Type", "").startswith("text/plain"), headers
+
+    body, headers = fetch("/json/stats.json")
+    assert "no-store" in headers.get("Cache-Control", ""), headers
+    assert headers.get("Pragma") == "no-cache", headers
+    assert headers.get("Expires") == "0", headers
+    assert body.startswith(b"{"), body[:20]
+
+    # Strict static behavior: no SPA fallback, dotfiles and traversal blocked.
+    for path in ("/js/nope.js", "/json/.gitignore", "/.gitignore", "/api/unknown"):
+        status_code, _headers, _body = raw_request("GET", path)
+        assert status_code == 404, (path, status_code)
+    for path in ("/%2e%2e/Cargo.toml", "/../Cargo.toml"):
+        status_code, _headers, _body = raw_request("GET", path)
+        assert status_code in (400, 404), (path, status_code)
+
+    status_code, headers, _body = raw_request("POST", "/")
+    assert status_code == 405, status_code
+    assert header(headers, "Allow") == "GET, HEAD", headers
 
     sock.close()
     time.sleep(0.5)
     node = api("/api/status")["servers"][0]
     assert node["connected"] is False, node
     assert node["online4"] is False and node["online6"] is False, node
+
+    offline = api("/json/stats.json")["servers"][0]
+    assert set(offline) == {
+        "name", "type", "host", "location", "online4", "online6",
+    }, offline
+    assert offline["online4"] is False and offline["online6"] is False, offline
 
     # IPv6 connection reports the IPv4 reachability field.
     sock6, response6 = login("::1", socket.AF_INET6)

@@ -9,6 +9,3 @@ __pycache__/
 
 # Rust
 /target/
-
-# 前端依赖
-/web/node_modules/

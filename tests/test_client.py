@@ -85,18 +85,6 @@ class MetricHelperTests(unittest.TestCase):
         client.parse_tcp6_ipv4(lines, addresses)
         self.assertEqual(addresses, {"127.0.0.1"})
 
-    def test_parse_target(self):
-        self.assertEqual(
-            client.parse_target("www.example.com:443"), ("www.example.com", 443)
-        )
-        self.assertEqual(
-            client.parse_target("[2001:db8::1]:8443"), ("2001:db8::1", 8443)
-        )
-        self.assertEqual(client.parse_target("2001:db8::1"), ("2001:db8::1", 80))
-        self.assertEqual(client.parse_target("example.com"), ("example.com", 80))
-        self.assertEqual(client.parse_target(""), ("", 0))
-        self.assertEqual(client.parse_target("host:bad"), ("", 0))
-
 
 class ConfigTests(unittest.TestCase):
     def test_defaults(self):
@@ -105,26 +93,14 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.port, 35601)
         self.assertEqual(config.username, "s01")
         self.assertEqual(config.password, "password")
-        self.assertEqual(config.family, 0)
-        self.assertEqual(config.interval, 1)
-        self.assertEqual(config.online_check_v4, "www.aliyun.com:443")
-        self.assertEqual(config.online_check_v6, "www.aliyun.com:443")
-        self.assertEqual(config.interfaces, [])
 
     def test_missing_password(self):
         with self.assertRaises(client.ConfigError):
             client.make_config(password="")
 
-    def test_interval_too_long(self):
+    def test_invalid_port(self):
         with self.assertRaises(client.ConfigError):
-            client.make_config(interval=60)
-
-    def test_family_filter(self):
-        self.assertEqual(client.make_config(family=6).family, 6)
-
-    def test_invalid_family(self):
-        with self.assertRaises(client.ConfigError):
-            client.make_config(family=5)
+            client.make_config(port=70000)
 
 
 if __name__ == "__main__":

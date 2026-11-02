@@ -272,15 +272,13 @@ Read_config_client(){
 	client_port="$(grep -o '"port"[[:space:]]*:[[:space:]]*[0-9]*' "${client_conf}" | grep -o '[0-9]*')"
 	client_user="$(grep -o '"username"[[:space:]]*:[[:space:]]*"[^"]*"' "${client_conf}" | sed 's/.*"\([^"]*\)"$/\1/')"
 	client_password="$(grep -o '"password"[[:space:]]*:[[:space:]]*"[^"]*"' "${client_conf}" | sed 's/.*"\([^"]*\)"$/\1/')"
-	client_family="$(grep -o '"family"[[:space:]]*:[[:space:]]*[0-9]*' "${client_conf}" | grep -o '[0-9]*')"
-	client_interval="$(grep -o '"interval"[[:space:]]*:[[:space:]]*[0-9]*' "${client_conf}" | grep -o '[0-9]*')"
 }
 Read_client_settings(){
 	[[ ! -e "${client_script}" ]] && return 1
 	eval "$(python3 - "${client_script}" <<'PY'
 import ast, shlex, sys
 path = sys.argv[1]
-names = ("SERVER", "PORT", "USERNAME", "PASSWORD", "FAMILY", "INTERVAL")
+names = ("SERVER", "PORT", "USERNAME", "PASSWORD")
 values = {}
 for line in open(path, encoding="utf-8"):
     for name in names:
@@ -292,7 +290,6 @@ for line in open(path, encoding="utf-8"):
 for name, var in (
     ("SERVER", "client_server"), ("PORT", "client_port"),
     ("USERNAME", "client_user"), ("PASSWORD", "client_password"),
-    ("FAMILY", "client_family"), ("INTERVAL", "client_interval"),
 ):
     print("%s=%s" % (var, shlex.quote(str(values.get(name, "")))))
 PY
@@ -304,10 +301,7 @@ Preserve_client_settings(){
 	python3 - "${backup}" "${client_script}" <<'PY'
 import re, sys
 old_path, new_path = sys.argv[1:3]
-names = (
-    "SERVER", "PORT", "USERNAME", "PASSWORD", "FAMILY", "INTERVAL",
-    "ONLINE_CHECK_V4", "ONLINE_CHECK_V6", "INTERFACES",
-)
+names = ("SERVER", "PORT", "USERNAME", "PASSWORD")
 values = {}
 for line in open(old_path, encoding="utf-8"):
     for name in names:
@@ -320,16 +314,14 @@ open(new_path, "w", encoding="utf-8").write(text)
 PY
 }
 Write_client_settings(){
-	python3 - "${client_script}" "${server_s}" "${server_port_s}" "${username_s}" "${password_s}" "${family_s:-0}" "${interval_s:-1}" <<'PY'
+	python3 - "${client_script}" "${server_s}" "${server_port_s}" "${username_s}" "${password_s}" <<'PY'
 import re, sys
-path, server, port, username, password, family, interval = sys.argv[1:8]
+path, server, port, username, password = sys.argv[1:6]
 values = {
     "SERVER": repr(server),
     "PORT": str(int(port)),
     "USERNAME": repr(username),
     "PASSWORD": repr(password),
-    "FAMILY": str(int(family)),
-    "INTERVAL": str(int(interval)),
 }
 text = open(path, encoding="utf-8").read()
 for name, value in values.items():
@@ -678,9 +670,6 @@ Modify_ServerStatus_server_disabled(){
 Set_ServerStatus_client(){
 	check_installed_client_status
 	check_client_script
-	Read_client_settings
-	family_s="${client_family:-0}"
-	interval_s="${client_interval:-1}"
 	Set_config_client
 	Write_client_settings || exit 1
 	Restart_ServerStatus_client
@@ -753,8 +742,6 @@ Update_ServerStatus_client(){
 		server_port_s="${client_port}"
 		username_s="${client_user}"
 		password_s="${client_password}"
-		family_s="${client_family:-0}"
-		interval_s="${client_interval:-1}"
 	elif [[ -e "${client_script}" ]]; then
 		cp -f "${client_script}" "${old_settings}"
 	fi

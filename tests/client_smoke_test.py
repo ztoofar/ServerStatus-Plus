@@ -79,7 +79,7 @@ class FakeServer(object):
             raise self.error
 
 
-def write_client_copy(host, port, family):
+def write_client_copy(host, port):
     with open(CLIENT_PATH, "r", encoding="utf-8") as handle:
         source = handle.read()
     replacements = {
@@ -87,9 +87,6 @@ def write_client_copy(host, port, family):
         "PORT": str(port),
         "USERNAME": repr("user"),
         "PASSWORD": repr("pass"),
-        "FAMILY": str(family),
-        "ONLINE_CHECK_V4": repr("127.0.0.1:9"),
-        "ONLINE_CHECK_V6": repr("127.0.0.1:9"),
     }
     for name, value in replacements.items():
         source, count = re.subn(
@@ -113,13 +110,13 @@ def write_client_copy(host, port, family):
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "client requires Linux /proc")
 class ClientSmokeTests(unittest.TestCase):
-    def run_case(self, server_family, client_family):
+    def run_case(self, server_family):
         try:
             server = FakeServer(server_family).start()
         except OSError as exc:
             self.skipTest("cannot bind test server: %s" % exc)
 
-        client_path = write_client_copy(server.host, server.port, client_family)
+        client_path = write_client_copy(server.host, server.port)
         self.addCleanup(os.unlink, client_path)
         try:
             completed = subprocess.run(
@@ -154,23 +151,16 @@ class ClientSmokeTests(unittest.TestCase):
             self.assertIn(field, payload)
             self.assertGreaterEqual(payload[field], 0, field)
         self.assertIsInstance(payload["cpu"], int)
-        if server_family == socket.AF_INET6:
-            self.assertIn("online4", payload)
-            self.assertNotIn("online6", payload)
-        else:
-            self.assertIn("online6", payload)
-            self.assertNotIn("online4", payload)
+        self.assertNotIn("online4", payload)
+        self.assertNotIn("online6", payload)
 
     def test_ipv4(self):
-        self.run_case(socket.AF_INET, 4)
+        self.run_case(socket.AF_INET)
 
     def test_ipv6(self):
         if not socket.has_ipv6:
             self.skipTest("IPv6 unavailable")
-        self.run_case(socket.AF_INET6, 6)
-
-    def test_auto_family_prefers_available(self):
-        self.run_case(socket.AF_INET, 0)
+        self.run_case(socket.AF_INET6)
 
 
 if __name__ == "__main__":

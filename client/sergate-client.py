@@ -17,24 +17,17 @@ import socket
 import sys
 import time
 
-# 客户端配置：安装脚本会修改下面四项，其余按需手动编辑。
+# 客户端配置：安装脚本会修改下面四项。
 SERVER = "127.0.0.1"
 PORT = 35601
 USERNAME = "s01"
 PASSWORD = "password"
-FAMILY = 0
-INTERVAL = 1
-ONLINE_CHECK_V4 = "www.aliyun.com:443"
-ONLINE_CHECK_V6 = "www.aliyun.com:443"
-INTERFACES = []
 
-MAX_INTERVAL = 25
+UPDATE_INTERVAL = 1.0
 
 CONNECT_TIMEOUT = 10.0
 AUTH_TIMEOUT = 10.0
 SEND_TIMEOUT = 15.0
-ONLINE_TIMEOUT = 2.0
-ONLINE_INTERVAL = 30.0
 RECONNECT_MIN = 3.0
 RECONNECT_MAX = 30.0
 AUTH_LIMIT = 4096
@@ -69,22 +62,13 @@ class ConnectError(Exception):
 
 
 class ClientConfig(object):
-    __slots__ = (
-        "server", "port", "username", "password", "family", "interval",
-        "online_check_v4", "online_check_v6", "interfaces",
-    )
+    __slots__ = ("server", "port", "username", "password")
 
-    def __init__(self, server, port, username, password, family, interval,
-                 online_check_v4, online_check_v6, interfaces):
+    def __init__(self, server, port, username, password):
         self.server = server
         self.port = port
         self.username = username
         self.password = password
-        self.family = family
-        self.interval = interval
-        self.online_check_v4 = online_check_v4
-        self.online_check_v6 = online_check_v6
-        self.interfaces = interfaces
 
 
 class Logger(object):
@@ -113,10 +97,7 @@ class Logger(object):
         sys.stdout.flush()
 
 
-def make_config(server=SERVER, port=PORT, username=USERNAME, password=PASSWORD,
-                family=FAMILY, interval=INTERVAL,
-                online_check_v4=ONLINE_CHECK_V4, online_check_v6=ONLINE_CHECK_V6,
-                interfaces=None):
+def make_config(server=SERVER, port=PORT, username=USERNAME, password=PASSWORD):
     server = str(server).strip()
     username = str(username).strip()
     password = str(password)
@@ -136,40 +117,11 @@ def make_config(server=SERVER, port=PORT, username=USERNAME, password=PASSWORD,
     if not 1 <= port <= 65535:
         raise ConfigError("PORT 必须在 1-65535 之间")
 
-    try:
-        family = int(family)
-    except (TypeError, ValueError):
-        raise ConfigError("FAMILY 必须是 0、4 或 6")
-    if family not in (0, 4, 6):
-        raise ConfigError("FAMILY 必须是 0、4 或 6")
-
-    try:
-        interval = int(interval)
-    except (TypeError, ValueError):
-        raise ConfigError("INTERVAL 必须是整数")
-    interval = max(1, interval)
-    if interval > MAX_INTERVAL:
-        raise ConfigError("INTERVAL 必须小于服务端 30 秒空闲超时（建议 <= %d）" % MAX_INTERVAL)
-
-    if interfaces is None:
-        interfaces = INTERFACES
-    if not isinstance(interfaces, (list, tuple)):
-        interfaces = []
-    interfaces = [str(item) for item in interfaces if str(item).strip()]
-
-    return ClientConfig(
-        server, port, username, password, family, interval,
-        str(online_check_v4 or ONLINE_CHECK_V4).strip(),
-        str(online_check_v6 or ONLINE_CHECK_V6).strip(),
-        interfaces,
-    )
+    return ClientConfig(server, port, username, password)
 
 
 def build_config():
-    return make_config(
-        SERVER, PORT, USERNAME, PASSWORD, FAMILY, INTERVAL,
-        ONLINE_CHECK_V4, ONLINE_CHECK_V6, INTERFACES,
-    )
+    return make_config(SERVER, PORT, USERNAME, PASSWORD)
 
 
 def install_signal_handlers():
@@ -403,8 +355,7 @@ def read_network_counters(names):
 
 
 class NetworkSampler(object):
-    def __init__(self, configured):
-        self.configured = list(configured)
+    def __init__(self):
         self.auto_names = []
         self.next_refresh = 0.0
         self.previous = None
@@ -412,8 +363,6 @@ class NetworkSampler(object):
         self.tx_history = collections.deque(maxlen=5)
 
     def _interfaces(self, now):
-        if self.configured:
-            return self.configured
         if not self.auto_names or now >= self.next_refresh:
             self.auto_names = scan_interfaces()
             self.next_refresh = now + REFRESH_INTERVAL
@@ -502,71 +451,11 @@ def read_established_load():
     return len(addresses)
 
 
-def parse_target(target):
-    target = str(target).strip()
-    if not target:
-        return "", 0
-
-    if target.startswith("["):
-        end = target.find("]")
-        if end < 0:
-            return "", 0
-        host = target[1:end]
-        rest = target[end + 1:]
-        port = 80
-        if rest.startswith(":"):
-            try:
-                port = int(rest[1:])
-            except ValueError:
-                return "", 0
-    elif target.count(":") == 1:
-        host, port_text = target.rsplit(":", 1)
-        try:
-            port = int(port_text)
-        except ValueError:
-            return "", 0
-    else:
-        host = target
-        port = 80
-
-    if not host or not 1 <= port <= 65535:
-        return "", 0
-    return host, port
-
-
-def check_online(target, family):
-    host, port = parse_target(target)
-    if not host:
-        return False
-
-    af = socket.AF_INET if family == 4 else socket.AF_INET6
-    try:
-        infos = socket.getaddrinfo(host, port, af, socket.SOCK_STREAM)
-    except OSError:
-        return False
-
-    for af_value, socktype, proto, _canonname, sockaddr in infos:
-        sock = None
-        try:
-            sock = socket.socket(af_value, socktype, proto)
-            sock.settimeout(ONLINE_TIMEOUT)
-            sock.connect(sockaddr)
-            return True
-        except OSError:
-            continue
-        finally:
-            if sock is not None:
-                try:
-                    sock.close()
-                except OSError:
-                    pass
-    return False
-
-
 def connect(config):
-    family = {0: socket.AF_UNSPEC, 4: socket.AF_INET, 6: socket.AF_INET6}[config.family]
     try:
-        infos = socket.getaddrinfo(config.server, config.port, family, socket.SOCK_STREAM)
+        infos = socket.getaddrinfo(
+            config.server, config.port, socket.AF_UNSPEC, socket.SOCK_STREAM
+        )
     except OSError as exc:
         raise ConnectError("解析地址失败: %s" % exc)
 
@@ -629,11 +518,6 @@ def authenticate(sock, config):
         raise AuthError(response.strip() or "认证失败")
     if "Authentication successful" not in response:
         raise AuthError("认证未完成: %s" % response.strip()[:200])
-    if "IPv6" in response:
-        return 6
-    if "IPv4" in response:
-        return 4
-    raise AuthError("未知网络模式")
 
 
 def build_payload(cpu_sampler, network_sampler, disk_sampler):
@@ -659,7 +543,7 @@ def build_payload(cpu_sampler, network_sampler, disk_sampler):
 
 def run(config, once, logger):
     cpu_sampler = CpuSampler()
-    network_sampler = NetworkSampler(config.interfaces)
+    network_sampler = NetworkSampler()
     disk_sampler = DiskSampler()
     backoff = RECONNECT_MIN
 
@@ -667,31 +551,14 @@ def run(config, once, logger):
         sock = None
         try:
             sock = connect(config)
-            version = authenticate(sock, config)
+            authenticate(sock, config)
             sock.settimeout(SEND_TIMEOUT)
-            logger.info(
-                "已连接 %s:%s（%s）"
-                % (config.server, config.port, "IPv6" if version == 6 else "IPv4")
-            )
+            logger.info("已连接 %s:%s" % (config.server, config.port))
             backoff = RECONNECT_MIN
-
-            check_family = 6 if version == 4 else 4
-            check_target = (
-                config.online_check_v6 if check_family == 6 else config.online_check_v4
-            )
-            check_field = "online6" if check_family == 6 else "online4"
-            online = False
-            last_online_check = None
             deadline = time.monotonic()
 
             while not STOP:
-                now = time.monotonic()
-                if last_online_check is None or now - last_online_check >= ONLINE_INTERVAL:
-                    online = check_online(check_target, check_family)
-                    last_online_check = now
-
                 payload = build_payload(cpu_sampler, network_sampler, disk_sampler)
-                payload[check_field] = bool(online)
                 line = "update " + json.dumps(payload, separators=(",", ":")) + "\n"
                 sock.sendall(line.encode("utf-8"))
                 logger.debug(line.rstrip())
@@ -699,7 +566,7 @@ def run(config, once, logger):
                 if once:
                     return 0
 
-                deadline += config.interval
+                deadline += UPDATE_INTERVAL
                 delay = deadline - time.monotonic()
                 if delay > 0:
                     sleep_with_stop(delay)

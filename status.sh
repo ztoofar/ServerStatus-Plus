@@ -54,34 +54,35 @@ Setup_proxy(){
 	echo -e "${Info} 已启用下载代理: ${safe_proxy}"
 }
 
-# 多源下载：raw.githubusercontent.com -> jsDelivr -> GitHub API（文本）
+# 多源下载：GitHub Raw -> GitHub API -> jsDelivr
 Download_File(){
 	local path="$1"
 	local output="$2"
-	local mode="${3:-text}"
-	local url
-	for url in "${repo_raw}/${path}" "${repo_cdn}/${path}"; do
-		rm -f "${output}"
-		if wget --no-check-certificate -t 2 -T 15 -O "${output}" "${url}" >/dev/null 2>&1; then
-			if [[ -s "${output}" ]]; then
-				return 0
-			fi
-		fi
-	done
-	if [[ "${mode}" = "text" ]]; then
-		rm -f "${output}"
-		if wget --no-check-certificate -t 2 -T 15 --header='Accept: application/vnd.github.raw' -O "${output}" "${repo_api}/${path}?ref=${repo_branch}" >/dev/null 2>&1; then
-			if [[ -s "${output}" ]]; then
-				return 0
-			fi
-		fi
+
+	# 1. GitHub Raw（最新，但部分网络会 404/重置）
+	rm -f "${output}"
+	if wget --no-check-certificate -t 2 -T 15 -O "${output}" "${repo_raw}/${path}" >/dev/null 2>&1; then
+		[[ -s "${output}" ]] && return 0
 	fi
+
+	# 2. GitHub API raw（不受 Raw CDN 缓存影响）
+	rm -f "${output}"
+	if wget --no-check-certificate -t 2 -T 15 --header='Accept: application/vnd.github.raw' -O "${output}" "${repo_api}/${path}?ref=${repo_branch}" >/dev/null 2>&1; then
+		[[ -s "${output}" ]] && return 0
+	fi
+
+	# 3. jsDelivr（CDN 可能缓存最多 12 小时）
+	rm -f "${output}"
+	if wget --no-check-certificate -t 2 -T 15 -O "${output}" "${repo_cdn}/${path}" >/dev/null 2>&1; then
+		[[ -s "${output}" ]] && return 0
+	fi
+
 	rm -f "${output}"
 	return 1
 }
 Fetch_Script_Version(){
 	local tmp="/tmp/status.version.$$" version
-	if Download_File "status.sh" "${tmp}" text; then
+	if Download_File "status.sh" "${tmp}"; then
 		version=$(grep 'sh_ver="' "${tmp}" | awk -F "=" '{print $NF}' | sed 's/\"//g' | head -1)
 		rm -f "${tmp}"
 		if [[ -n "${version}" ]]; then
@@ -155,7 +156,7 @@ Download_Server_Status_server(){
 		*) echo -e "${Error} 不支持的 CPU 架构: $(uname -m)" && exit 1 ;;
 	esac
 	rm -f "sergate"
-	if ! Download_File "bin/${binary}" "sergate" binary; then
+	if ! Download_File "bin/${binary}" "sergate"; then
 		echo -e "${Error} ServerStatus 服务端下载失败 !" && exit 1
 	fi
 	[[ ! -s "sergate" ]] && echo -e "${Error} ServerStatus 服务端下载失败 !" && exit 1
@@ -178,7 +179,7 @@ Download_Server_Status_client(){
 	check_python3
 	cd "/tmp"
 	rm -f "sergate-client.py"
-	if ! Download_File "client/sergate-client.py" "sergate-client.py" text; then
+	if ! Download_File "client/sergate-client.py" "sergate-client.py"; then
 		echo -e "${Error} ServerStatus 客户端下载失败 !" && exit 1
 	fi
 	[[ ! -s "sergate-client.py" ]] && echo -e "${Error} ServerStatus 客户端下载失败 !" && exit 1
@@ -205,14 +206,14 @@ Download_Server_Status_client(){
 }
 Service_Server_Status_server(){
 	if [[ ${release} = "centos" ]]; then
-		if ! Download_File "service/server_status_server_centos" "/etc/init.d/status-server" text; then
+		if ! Download_File "service/server_status_server_centos" "/etc/init.d/status-server"; then
 			echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-server
 		chkconfig --add status-server
 		chkconfig status-server on
 	else
-		if ! Download_File "service/server_status_server_debian" "/etc/init.d/status-server" text; then
+		if ! Download_File "service/server_status_server_debian" "/etc/init.d/status-server"; then
 			echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-server
@@ -222,14 +223,14 @@ Service_Server_Status_server(){
 }
 Service_Server_Status_client(){
 	if [[ ${release} = "centos" ]]; then
-		if ! Download_File "service/server_status_client_centos" "/etc/init.d/status-client" text; then
+		if ! Download_File "service/server_status_client_centos" "/etc/init.d/status-client"; then
 			echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-client
 		chkconfig --add status-client
 		chkconfig status-client on
 	else
-		if ! Download_File "service/server_status_client_debian" "/etc/init.d/status-client" text; then
+		if ! Download_File "service/server_status_client_debian" "/etc/init.d/status-client"; then
 			echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-client
@@ -817,7 +818,7 @@ Update_Shell(){
 		rm -rf /etc/init.d/status-server
 		Service_Server_Status_server
 	fi
-	if ! Download_File "status.sh" "/tmp/status.sh.new" text; then
+	if ! Download_File "status.sh" "/tmp/status.sh.new"; then
 		echo -e "${Error} 脚本下载失败 !" && exit 1
 	fi
 	mv -f "/tmp/status.sh.new" status.sh && chmod +x status.sh

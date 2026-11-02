@@ -25,24 +25,24 @@ ServerStatus-Plus 是一套轻量级、实时的服务器状态监控系统。�
 
 ## 安装
 
-下载并执行安装脚本：
+下载并执行安装脚本（GitHub API 始终返回最新内容）：
 
 ```bash
-wget -N --no-check-certificate https://cdn.jsdelivr.net/gh/ztoofar/ServerStatus-Plus@main/status.sh && chmod +x status.sh
-```
-
-如果 `raw.githubusercontent.com` 出现 404 或连接重置，可改用：
-
-```bash
-# 备用 1：GitHub Raw
-wget -N --no-check-certificate https://raw.githubusercontent.com/ztoofar/ServerStatus-Plus/main/status.sh && chmod +x status.sh
-
-# 备用 2：GitHub API
 wget --header='Accept: application/vnd.github.raw' -O status.sh \
   'https://api.github.com/repos/ztoofar/ServerStatus-Plus/contents/status.sh?ref=main' && chmod +x status.sh
 ```
 
-脚本内部下载客户端、服务端二进制和服务脚本时会自动在 GitHub Raw、jsDelivr、GitHub API 之间回退。
+备用下载地址：
+
+```bash
+# jsDelivr CDN（可能缓存最多 12 小时）
+wget -N --no-check-certificate https://cdn.jsdelivr.net/gh/ztoofar/ServerStatus-Plus@main/status.sh && chmod +x status.sh
+
+# GitHub Raw（部分网络可能返回 404 或连接重置）
+wget -N --no-check-certificate https://raw.githubusercontent.com/ztoofar/ServerStatus-Plus/main/status.sh && chmod +x status.sh
+```
+
+脚本内部下载客户端、服务端二进制和服务脚本时按 GitHub Raw → GitHub API → jsDelivr 顺序自动回退。
 
 根据需要进入服务端或客户端菜单：
 
@@ -62,7 +62,8 @@ bash status.sh c   # 客户端菜单
 ```bash
 export http_proxy=http://127.0.0.1:7890
 export https_proxy=http://127.0.0.1:7890
-wget -N --no-check-certificate https://cdn.jsdelivr.net/gh/ztoofar/ServerStatus-Plus@main/status.sh && chmod +x status.sh
+wget --header='Accept: application/vnd.github.raw' -O status.sh \
+  'https://api.github.com/repos/ztoofar/ServerStatus-Plus/contents/status.sh?ref=main' && chmod +x status.sh
 bash status.sh s
 ```
 

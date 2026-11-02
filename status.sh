@@ -432,7 +432,7 @@ Add_ServerStatus_server(){
 	local exists
 	exists="$(${jq_file} -r --arg u "${username_s}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
 	[[ -n "${exists}" ]] && echo -e "${Error} 用户名已被使用 !" && exit 1
-	Jq_edit '.servers += [{"id": $id, "username": $username, "password": $password, "name": $name, "type": $type, "host": "None", "location": $location, "group": "", "tags": [], "disabled": false}]' \
+	Jq_edit '.servers = ([{"id": $id, "username": $username, "password": $password, "name": $name, "type": $type, "host": "None", "location": $location, "group": "", "tags": [], "disabled": false}] + (.servers // []))' \
 		--arg id "${username_s}" --arg username "${username_s}" --arg password "${password_s}" --arg name "${name_s}" --arg type "${type_s}" --arg location "${location_s}"
 	echo -e "${Info} 添加节点成功 ${Green_font_prefix}[ 节点名称: ${name_s}, 节点用户名: ${username_s}, 节点密码: ${password_s} ]${Font_color_suffix} !"
 }

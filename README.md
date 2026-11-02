@@ -87,6 +87,8 @@ tail -f /tmp/serverstatus_client.log
 
 服务端配置文件为 `server/config.json`，包含 `listen`、`http_listen`、`site` 与 `servers`。每个节点的 `username` 必须唯一，`password` 需与客户端配置一致。完整示例见 [config.example.json](config.example.json)。
 
+安装脚本添加的新节点会插入 `servers` 数组最前面，因此显示在表格最上方。
+
 客户端配置文件为 `client/config.json`。其中 `family` 可选 `0`（自动）、`4`（仅 IPv4）、`6`（仅 IPv6）。修改配置后需重启对应服务。
 
 ## 网页数据

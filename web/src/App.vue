@@ -6,22 +6,16 @@ import MeterBar from './components/MeterBar.vue'
 import StatusPill from './components/StatusPill.vue'
 import type { ServerStatus } from './types'
 
-const { status, error, age } = useStatus()
+const { status, error } = useStatus()
 const theme = ref<'dark' | 'light'>('dark')
 const expandedId = ref<string | null>(null)
 
 const servers = computed(() => status.value?.servers ?? [])
-const siteTitle = computed(() => status.value?.site.title || 'ServerStatus-Plus')
-const announcement = computed(() => status.value?.site.announcement || '')
-const updatedText = computed(() => (status.value ? `最后更新: ${age.value} 秒前` : '正在加载…'))
-
-watch(
-  siteTitle,
-  (title) => {
-    document.title = title
-  },
-  { immediate: true },
-)
+const updatedText = computed(() => {
+  if (!status.value) return '正在加载…'
+  const time = new Date(status.value.updated * 1000)
+  return `最近更新 ${time.toLocaleTimeString('zh-CN', { hour12: false })}`
+})
 
 watch(
   theme,
@@ -79,27 +73,6 @@ function uptime(server: ServerStatus) {
 
 <template>
   <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo" aria-hidden="true">S</div>
-        <div>
-          <h1>{{ siteTitle }}</h1>
-          <p v-if="announcement">{{ announcement }}</p>
-        </div>
-      </div>
-      <div class="top-actions">
-        <span class="updated">{{ updatedText }}</span>
-        <button
-          class="theme-btn"
-          type="button"
-          :aria-label="theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
-          @click="toggleTheme"
-        >
-          {{ theme === 'dark' ? '☀' : '☾' }}
-        </button>
-      </div>
-    </header>
-
     <div v-if="error && !status" class="notice error">无法连接服务端：{{ error }}</div>
     <div v-else-if="!status" class="notice">正在加载…</div>
     <div v-else class="table-wrap">
@@ -204,9 +177,16 @@ function uptime(server: ServerStatus) {
       </table>
     </div>
 
-    <footer>
-      ServerStatus-Plus ·
-      <a href="https://github.com/ztoofar/ServerStatus-Plus" target="_blank" rel="noreferrer">GitHub</a>
+    <footer class="statusbar">
+      <span class="updated">{{ updatedText }}</span>
+      <button
+        class="theme-btn"
+        type="button"
+        :aria-label="theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
+        @click="toggleTheme"
+      >
+        {{ theme === 'dark' ? '☀' : '☾' }}
+      </button>
     </footer>
   </div>
 </template>

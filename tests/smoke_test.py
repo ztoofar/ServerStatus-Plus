@@ -90,7 +90,7 @@ def main():
 
     with urllib.request.urlopen(HTTP + "/", timeout=5) as response:
         html = response.read().decode("utf-8")
-    assert "ServerStatus-Plus" in html, html[:200]
+    assert "ServerStatus" in html, html[:200]
     assert "/assets/" in html, html[:400]
 
     sock.close()

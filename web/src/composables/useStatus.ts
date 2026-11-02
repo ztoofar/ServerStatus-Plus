@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { fetchStatus, subscribeStatus } from '../api'
 import type { StatusResponse } from '../types'
 
@@ -6,15 +6,8 @@ export function useStatus() {
   const status = ref<StatusResponse | null>(null)
   const live = ref(false)
   const error = ref('')
-  const now = ref(Date.now() / 1000)
   let unsubscribe: (() => void) | null = null
   let pollTimer: number | null = null
-  let clockTimer: number | null = null
-
-  const age = computed(() => {
-    if (!status.value) return 0
-    return Math.max(0, Math.floor(now.value - status.value.updated))
-  })
 
   async function pollOnce() {
     try {
@@ -58,16 +51,12 @@ export function useStatus() {
   onMounted(() => {
     void pollOnce()
     connect()
-    clockTimer = window.setInterval(() => {
-      now.value = Date.now() / 1000
-    }, 1000)
   })
 
   onUnmounted(() => {
     unsubscribe?.()
     stopPolling()
-    if (clockTimer !== null) window.clearInterval(clockTimer)
   })
 
-  return { status, live, error, age }
+  return { status, error }
 }

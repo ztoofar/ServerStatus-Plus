@@ -109,7 +109,7 @@ PASSWORD = "password"
 
 - 自动尝试 IPv4/IPv6，在线状态由服务端根据实际连接判断。
 - 上报间隔固定为 1 秒。
-- 负载沿用原版 Toyo 语义：`/proc/net/tcp6` 中 ESTABLISHED 的唯一 IPv4 远端地址数，不是系统 load average。
+- 负载：已建立 TCP 连接的唯一远端 IPv4/IPv6 地址数（排除 `127.0.0.0/8`、`::1` 等本地地址）。
 
 ## 构建与测试
 

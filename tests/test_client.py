@@ -62,28 +62,43 @@ class MetricHelperTests(unittest.TestCase):
             "127.0.0.1",
         )
 
-    def test_decode_tcp6_ipv4(self):
-        self.assertEqual(
-            client.decode_tcp6_ipv4("0000000000000000ffff00000100007f"),
-            "127.0.0.1",
-        )
-        self.assertIsNone(client.decode_tcp6_ipv4("0" * 32))
+    def test_is_local_address(self):
+        self.assertTrue(client.is_local_address("127.0.0.1"))
+        self.assertTrue(client.is_local_address("127.0.0.2"))
+        self.assertTrue(client.is_local_address("::1"))
+        self.assertTrue(client.is_local_address("::"))
+        self.assertFalse(client.is_local_address("192.168.1.2"))
+        self.assertFalse(client.is_local_address("2001:db8::1"))
 
-    def test_parse_tcp6_ipv4_unique_established(self):
-        lines = [
+    def test_parse_tcp_table_unique_remote(self):
+        ipv4_lines = [
+            "  sl  local_address rem_address   st\n",
+            "   0: 0100007F:1F90 0100007F:D431 01\n",
+            "   1: 0100007F:1F90 0201A8C0:D432 01\n",
+            "   2: 0100007F:1F90 0201A8C0:D433 01\n",
+            "   3: 0100007F:1F90 0100000A:D434 01\n",
+            "   4: 0100007F:1F90 0100000A:D435 0A\n",
+        ]
+        addresses = set()
+        client.parse_tcp_table(ipv4_lines, False, addresses)
+        self.assertEqual(addresses, {"192.168.1.2", "10.0.0.1"})
+
+        ipv6_lines = [
             "  sl  local_address rem_address   st\n",
             "   0: 00000000000000000000000000000000:1F90 "
             "0000000000000000ffff00000100007f:D431 01\n",
             "   1: 00000000000000000000000000000000:1F90 "
-            "0000000000000000ffff00000100007f:D432 01\n",
+            "0000000000000000ffff00000301a8c0:D432 01\n",
             "   2: 00000000000000000000000000000000:1F90 "
-            "00000000000000000000000000000000:D433 01\n",
+            "b80d0120000000000000000001000000:D433 01\n",
             "   3: 00000000000000000000000000000000:1F90 "
-            "0000000000000000ffff00000100007f:D434 0A\n",
+            "00000000000000000000000000000000:D434 01\n",
         ]
-        addresses = set()
-        client.parse_tcp6_ipv4(lines, addresses)
-        self.assertEqual(addresses, {"127.0.0.1"})
+        client.parse_tcp_table(ipv6_lines, True, addresses)
+        self.assertEqual(
+            addresses,
+            {"192.168.1.2", "10.0.0.1", "192.168.1.3", "2001:db8::1"},
+        )
 
 
 class ConfigTests(unittest.TestCase):

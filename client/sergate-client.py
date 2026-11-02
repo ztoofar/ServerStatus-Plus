@@ -416,14 +416,11 @@ def decode_tcp_address(raw, is_ipv6):
     return socket.inet_ntoa(data[::-1])
 
 
-def decode_tcp6_ipv4(raw):
-    address = decode_tcp_address(raw, True)
-    if address is None or ":" in address:
-        return None
-    return address
+def is_local_address(address):
+    return address in ("0.0.0.0", "::") or address == "::1" or address.startswith("127.")
 
 
-def parse_tcp6_ipv4(lines, addresses):
+def parse_tcp_table(lines, is_ipv6, addresses):
     first = True
     for line in lines:
         if first:
@@ -435,19 +432,20 @@ def parse_tcp6_ipv4(lines, addresses):
         remote = fields[2]
         if ":" not in remote:
             continue
-        address = decode_tcp6_ipv4(remote.rsplit(":", 1)[0])
-        if address is not None:
+        address = decode_tcp_address(remote.rsplit(":", 1)[0], is_ipv6)
+        if address is not None and not is_local_address(address):
             addresses.add(address)
 
 
 def read_established_load():
-    # 原版 Toyo 语义：统计 tcp6 中 ESTABLISHED 的唯一 IPv4 远端地址。
+    # 负载：连接到本机的唯一远端 IPv4/IPv6 地址数（排除回环）。
     addresses = set()
-    try:
-        with open("/proc/net/tcp6", "r") as handle:
-            parse_tcp6_ipv4(handle, addresses)
-    except OSError:
-        pass
+    for path, is_ipv6 in (("/proc/net/tcp", False), ("/proc/net/tcp6", True)):
+        try:
+            with open(path, "r") as handle:
+                parse_tcp_table(handle, is_ipv6, addresses)
+        except OSError:
+            continue
     return len(addresses)
 
 

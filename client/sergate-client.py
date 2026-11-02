@@ -14,6 +14,7 @@ import json
 import os
 import signal
 import socket
+import stat
 import sys
 import time
 
@@ -165,18 +166,17 @@ def parse_meminfo(lines):
 
 def memory_values(values):
     total = max(0, int(values.get("MemTotal", 0)))
-    fallback_available = (
-        int(values.get("MemFree", 0))
-        + int(values.get("Buffers", 0))
-        + int(values.get("Cached", 0))
-        + int(values.get("SReclaimable", 0))
-        - int(values.get("Shmem", 0))
+    used = (
+        total
+        - int(values.get("MemFree", 0))
+        - int(values.get("Buffers", 0))
+        - int(values.get("Cached", 0))
+        - int(values.get("SReclaimable", 0))
     )
-    available = int(values.get("MemAvailable", fallback_available))
-    available = max(0, min(available, total))
+    used = max(0, min(used, total))
     swap_total = max(0, int(values.get("SwapTotal", 0)))
     swap_free = max(0, int(values.get("SwapFree", 0)))
-    return total, max(0, total - available), swap_total, max(0, swap_total - swap_free)
+    return total, used, swap_total, max(0, swap_total - swap_free)
 
 
 def read_memory():
@@ -248,27 +248,57 @@ def decode_mount(path):
     return "".join(output)
 
 
-def find_mounts():
+def mount_identity(source, mount_stat, stat_fn=os.stat):
+    """Return a key identifying the filesystem behind one mount entry.
+
+    Prefer the backing block device over the mounted filesystem's st_dev:
+    btrfs subvolumes (Synology mounts /@syno, /@docker/btrfs, snapshots)
+    each expose a different st_dev while sharing one filesystem, so st_dev
+    alone would count the same capacity once per subvolume.
+    """
+    try:
+        source_stat = stat_fn(source)
+    except OSError:
+        source_stat = None
+
+    if source_stat is not None and stat.S_ISBLK(source_stat.st_mode):
+        return ("source", source_stat.st_rdev)
+
+    return ("mount", mount_stat.st_dev)
+
+
+def select_mounts(lines, stat_fn=os.stat):
     mounts = []
-    devices = set()
+    seen = set()
+
+    for line in lines:
+        fields = line.split()
+        if len(fields) < 3 or fields[2] in EXCLUDED_FS:
+            continue
+
+        mount = decode_mount(fields[1])
+
+        try:
+            mount_stat = stat_fn(mount)
+        except OSError:
+            continue
+
+        key = mount_identity(fields[0], mount_stat, stat_fn)
+        if key in seen:
+            continue
+
+        seen.add(key)
+        mounts.append(mount)
+
+    return mounts
+
+
+def find_mounts():
     try:
         with open("/proc/self/mounts", "r", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                fields = line.split()
-                if len(fields) < 3 or fields[2] in EXCLUDED_FS:
-                    continue
-                mount = decode_mount(fields[1])
-                try:
-                    stat = os.stat(mount)
-                except OSError:
-                    continue
-                if stat.st_dev in devices:
-                    continue
-                devices.add(stat.st_dev)
-                mounts.append(mount)
+            return select_mounts(handle)
     except OSError:
         return []
-    return mounts
 
 
 class DiskSampler(object):
@@ -286,12 +316,12 @@ class DiskSampler(object):
         used = 0
         for mount in self.mounts or ("/",):
             try:
-                stat = os.statvfs(mount)
+                usage = os.statvfs(mount)
             except OSError:
                 continue
-            block_size = stat.f_frsize or stat.f_bsize
-            total += stat.f_blocks * block_size
-            used += (stat.f_blocks - stat.f_bfree) * block_size
+            block_size = usage.f_frsize or usage.f_bsize
+            total += usage.f_blocks * block_size
+            used += (usage.f_blocks - usage.f_bfree) * block_size
         return total // 1048576, used // 1048576
 
 

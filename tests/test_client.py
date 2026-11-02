@@ -3,6 +3,7 @@
 
 import importlib.util
 import os
+import stat
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,27 +26,32 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(values["MemAvailable"], 512000)
         self.assertEqual(values["SwapFree"], 524288)
 
-    def test_memory_values_available(self):
-        values = {
-            "MemTotal": 1000,
-            "MemAvailable": 400,
-            "SwapTotal": 100,
-            "SwapFree": 40,
-        }
-        self.assertEqual(client.memory_values(values), (1000, 600, 100, 60))
-
-    def test_memory_values_fallback(self):
+    def test_memory_values_exclude_cache(self):
+        # Same accounting as free(1) and the upstream ServerStatus client.
         values = {
             "MemTotal": 1000,
             "MemFree": 100,
             "Buffers": 50,
             "Cached": 150,
             "SReclaimable": 20,
-            "Shmem": 20,
+            "MemAvailable": 400,
+            "SwapTotal": 100,
+            "SwapFree": 40,
         }
-        total, used, _swap_total, _swap_used = client.memory_values(values)
-        self.assertEqual(total, 1000)
-        self.assertEqual(used, 700)
+        self.assertEqual(client.memory_values(values), (1000, 680, 100, 60))
+
+    def test_memory_values_clamped(self):
+        values = {
+            "MemTotal": 1000,
+            "MemFree": 900,
+            "Buffers": 100,
+            "Cached": 100,
+            "SReclaimable": 100,
+        }
+        _total, used, swap_total, swap_used = client.memory_values(values)
+        self.assertEqual(used, 0)
+        self.assertEqual(swap_total, 0)
+        self.assertEqual(swap_used, 0)
 
     def test_decode_mount(self):
         self.assertEqual(client.decode_mount(r"/mnt/disk\040one"), "/mnt/disk one")
@@ -99,6 +105,66 @@ class MetricHelperTests(unittest.TestCase):
             addresses,
             {"192.168.1.2", "10.0.0.1", "192.168.1.3", "2001:db8::1"},
         )
+
+
+class FakeStat(object):
+    def __init__(self, mode=0, dev=0, rdev=0):
+        self.st_mode = mode
+        self.st_dev = dev
+        self.st_rdev = rdev
+
+
+class MountSelectionTests(unittest.TestCase):
+    def test_btrfs_subvolumes_counted_once(self):
+        # Synology mounts several subvolumes of one btrfs filesystem; each
+        # has its own st_dev but shares capacity with the parent volume.
+        block = stat.S_IFBLK | 0o600
+        known = {
+            "/dev/mapper/cachedev_0": FakeStat(block, rdev=0xFD00),
+            "/dev/md0": FakeStat(block, rdev=0x0900),
+            "/volume1": FakeStat(dev=0x1000),
+            "/volume1/@docker/btrfs": FakeStat(dev=0x1001),
+            "/volume1/Data/#snapshot": FakeStat(dev=0x1002),
+            "/": FakeStat(dev=0x2000),
+        }
+
+        def fake_stat(path):
+            if path in known:
+                return known[path]
+            raise OSError(path)
+
+        lines = [
+            "/dev/mapper/cachedev_0 /volume1 btrfs rw,subvol=/@syno 0 0\n",
+            "/dev/mapper/cachedev_0 /volume1/@docker/btrfs btrfs "
+            "rw,subvol=/@syno/@docker/btrfs 0 0\n",
+            "/dev/mapper/cachedev_0 /volume1/Data/#snapshot btrfs "
+            "ro,subvol=/@syno/@sharesnap/Data 0 0\n",
+            "/dev/md0 / ext4 rw 0 0\n",
+            "tmpfs /run tmpfs rw 0 0\n",
+        ]
+
+        self.assertEqual(
+            client.select_mounts(lines, fake_stat),
+            ["/volume1", "/"],
+        )
+
+    def test_bind_mounts_with_unknown_source_deduped_by_st_dev(self):
+        known = {
+            "/": FakeStat(dev=0x2000),
+            "/srv/bind": FakeStat(dev=0x2000),
+        }
+
+        def fake_stat(path):
+            if path in known:
+                return known[path]
+            raise OSError(path)
+
+        lines = [
+            "/dev/root / ext4 rw 0 0\n",
+            "/dev/root /srv/bind ext4 rw 0 0\n",
+        ]
+
+        self.assertEqual(client.select_mounts(lines, fake_stat), ["/"])
 
 
 class ConfigTests(unittest.TestCase):

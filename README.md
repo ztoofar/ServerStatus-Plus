@@ -173,6 +173,10 @@ target/release/sergate -c tests/fixtures/smoke-config.json
 python -I tests/smoke_test.py
 ```
 
+## 维护
+
+修改 `status.sh` 后必须递增文件顶部的 `sh_ver`，便于用户通过“升级脚本”确认版本已更新。
+
 ## License
 
 MIT，详见 [LICENSE](LICENSE)。

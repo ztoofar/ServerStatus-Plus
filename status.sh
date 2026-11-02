@@ -9,7 +9,8 @@ export PATH
 #	Maintainer: ztoofar - https://github.com/ztoofar/ServerStatus-Plus
 #=================================================
 
-sh_ver="2.1.0"
+# 每次修改本脚本后递增 sh_ver
+sh_ver="2.2.0"
 filepath=$(cd "$(dirname "$0")"; pwd)
 file_1=$(echo -e "${filepath}"|awk -F "$0" '{print $1}')
 file="/usr/local/ServerStatus"

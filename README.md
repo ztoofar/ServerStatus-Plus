@@ -91,6 +91,8 @@ service status-server start|stop|restart|status
 service status-client start|stop|restart|status
 ```
 
+服务通过 `setsid` 以独立会话启动，退出安装脚本或断开 SSH 不会停止服务。
+
 日志：
 
 ```bash

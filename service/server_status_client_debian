@@ -41,7 +41,11 @@ do_start(){
 	echo -e "${Info_font_prefix}[信息]${Font_suffix} $NAME (PID ${PID}) 正在运行..." && exit 0
 	else
 		ulimit -n 51200
-		nohup "${PYTHON_BIN}" -u "$BIN" -c "$CONF" > /tmp/serverstatus_client.log 2>&1 &
+		if command -v setsid >/dev/null 2>&1; then
+			nohup setsid "${PYTHON_BIN}" -u "$BIN" -c "$CONF" < /dev/null > /tmp/serverstatus_client.log 2>&1 &
+		else
+			nohup "${PYTHON_BIN}" -u "$BIN" -c "$CONF" < /dev/null > /tmp/serverstatus_client.log 2>&1 &
+		fi
 		sleep 2s
 		check_running
 		if [[ $? -eq 0 ]]; then

@@ -50,7 +50,7 @@ function disk(server: ServerStatus) {
 }
 
 function load(server: ServerStatus) {
-  return Number.isFinite(server.load) ? server.load.toFixed(2) : '–'
+  return Number.isFinite(server.load) ? String(server.load) : '–'
 }
 
 function network(server: ServerStatus) {

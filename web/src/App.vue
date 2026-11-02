@@ -160,10 +160,6 @@ function uptime(server: ServerStatus) {
                       {{ formatBytes(server.hdd_total * 1024 * 1024) }}
                     </strong>
                   </div>
-                  <div v-if="server.custom">
-                    <span>自定义</span>
-                    <strong>{{ server.custom }}</strong>
-                  </div>
                 </div>
               </td>
             </tr>

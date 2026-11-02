@@ -55,6 +55,18 @@ bash status.sh s
 | `/usr/local/ServerStatus/server/config.json` | 服务端配置 |
 | `/usr/local/ServerStatus/client/sergate-client.py` | Python 客户端脚本（配置在文件顶部） |
 
+systemd 环境：
+
+```bash
+systemctl start|stop|restart|status status-server
+systemctl start|stop|restart|status status-client
+
+journalctl -u status-server -f
+journalctl -u status-client -f
+```
+
+无 systemd 时回退 init.d：
+
 ```bash
 service status-server start|stop|restart|status
 service status-client start|stop|restart|status
@@ -63,7 +75,7 @@ tail -f /tmp/serverstatus_server.log
 tail -f /tmp/serverstatus_client.log
 ```
 
-服务通过 `setsid` 独立会话启动，退出安装脚本或断开 SSH 不会停止服务。
+安装脚本优先安装 systemd unit 并设置开机启动；旧系统使用 init.d + `setsid`。退出安装脚本或断开 SSH 不会停止服务。
 
 ## 配置
 

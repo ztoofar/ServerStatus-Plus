@@ -1,0 +1,15 @@
+[Unit]
+Description=ServerStatus-Plus Client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/ServerStatus/client
+ExecStart=/usr/bin/env python3 -u /usr/local/ServerStatus/client/sergate-client.py
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=51200
+
+[Install]
+WantedBy=multi-user.target

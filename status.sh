@@ -10,7 +10,7 @@ export PATH
 #=================================================
 
 # 每次修改本脚本后递增 sh_ver
-sh_ver="2.2.0"
+sh_ver="2.3.0"
 filepath=$(cd "$(dirname "$0")"; pwd)
 file_1=$(echo -e "${filepath}"|awk -F "$0" '{print $1}')
 file="/usr/local/ServerStatus"
@@ -205,39 +205,102 @@ Download_Server_Status_client(){
 	rm -f "/tmp/sergate-client.py"
 	rm -f "${client_legacy_bin}"
 }
-Service_Server_Status_server(){
-	if [[ ${release} = "centos" ]]; then
-		if ! Download_File "service/server_status_server_centos" "/etc/init.d/status-server"; then
-			echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
-		fi
-		chmod +x /etc/init.d/status-server
-		chkconfig --add status-server
-		chkconfig status-server on
+systemd_available(){
+	command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]
+}
+Service_Control(){
+	local name="$1" action="$2"
+	if systemd_available && [[ -f "/etc/systemd/system/${name}.service" ]]; then
+		systemctl "$action" "$name"
 	else
-		if ! Download_File "service/server_status_server_debian" "/etc/init.d/status-server"; then
-			echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
-		fi
-		chmod +x /etc/init.d/status-server
-		update-rc.d -f status-server defaults
+		/etc/init.d/"$name" "$action"
 	fi
-	echo -e "${Info} ServerStatus 服务端服务管理脚本下载完成 !"
+}
+Service_Server_Status_server(){
+	if systemd_available; then
+		if ! Download_File "service/status-server.service" "/etc/systemd/system/status-server.service"; then
+			echo -e "${Error} ServerStatus 服务端 systemd 服务下载失败 !" && exit 1
+		fi
+		systemctl daemon-reload
+		if ! systemctl enable status-server >/dev/null 2>&1; then
+			echo -e "${Error} ServerStatus 服务端开机启动设置失败 !" && exit 1
+		fi
+		local was_running=0
+		if [[ -e /etc/init.d/status-server ]]; then
+			check_pid_server
+			if [[ ! -z "${PID}" ]]; then
+				was_running=1
+				/etc/init.d/status-server stop >/dev/null 2>&1 || true
+			fi
+			chkconfig --del status-server >/dev/null 2>&1 || true
+			update-rc.d -f status-server remove >/dev/null 2>&1 || true
+			rm -f /etc/init.d/status-server
+			systemctl daemon-reload
+		fi
+		if [[ ${was_running} -eq 1 ]]; then
+			systemctl start status-server >/dev/null 2>&1 || echo -e "${Error} 服务端启动失败，请稍后手动启动 !"
+		fi
+		echo -e "${Info} ServerStatus 服务端 systemd 服务已安装并设置开机启动 !"
+	else
+		if [[ ${release} = "centos" ]]; then
+			if ! Download_File "service/server_status_server_centos" "/etc/init.d/status-server"; then
+				echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
+			fi
+			chmod +x /etc/init.d/status-server
+			chkconfig --add status-server
+			chkconfig status-server on
+		else
+			if ! Download_File "service/server_status_server_debian" "/etc/init.d/status-server"; then
+				echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
+			fi
+			chmod +x /etc/init.d/status-server
+			update-rc.d -f status-server defaults
+		fi
+		echo -e "${Info} ServerStatus 服务端服务管理脚本下载完成 !"
+	fi
 }
 Service_Server_Status_client(){
-	if [[ ${release} = "centos" ]]; then
-		if ! Download_File "service/server_status_client_centos" "/etc/init.d/status-client"; then
-			echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
+	if systemd_available; then
+		if ! Download_File "service/status-client.service" "/etc/systemd/system/status-client.service"; then
+			echo -e "${Error} ServerStatus 客户端 systemd 服务下载失败 !" && exit 1
 		fi
-		chmod +x /etc/init.d/status-client
-		chkconfig --add status-client
-		chkconfig status-client on
+		systemctl daemon-reload
+		if ! systemctl enable status-client >/dev/null 2>&1; then
+			echo -e "${Error} ServerStatus 客户端开机启动设置失败 !" && exit 1
+		fi
+		local was_running=0
+		if [[ -e /etc/init.d/status-client ]]; then
+			check_pid_client
+			if [[ ! -z "${PID}" ]]; then
+				was_running=1
+				/etc/init.d/status-client stop >/dev/null 2>&1 || true
+			fi
+			chkconfig --del status-client >/dev/null 2>&1 || true
+			update-rc.d -f status-client remove >/dev/null 2>&1 || true
+			rm -f /etc/init.d/status-client
+			systemctl daemon-reload
+		fi
+		if [[ ${was_running} -eq 1 ]]; then
+			systemctl start status-client >/dev/null 2>&1 || echo -e "${Error} 客户端启动失败，请稍后手动启动 !"
+		fi
+		echo -e "${Info} ServerStatus 客户端 systemd 服务已安装并设置开机启动 !"
 	else
-		if ! Download_File "service/server_status_client_debian" "/etc/init.d/status-client"; then
-			echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
+		if [[ ${release} = "centos" ]]; then
+			if ! Download_File "service/server_status_client_centos" "/etc/init.d/status-client"; then
+				echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
+			fi
+			chmod +x /etc/init.d/status-client
+			chkconfig --add status-client
+			chkconfig status-client on
+		else
+			if ! Download_File "service/server_status_client_debian" "/etc/init.d/status-client"; then
+				echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
+			fi
+			chmod +x /etc/init.d/status-client
+			update-rc.d -f status-client defaults
 		fi
-		chmod +x /etc/init.d/status-client
-		update-rc.d -f status-client defaults
+		echo -e "${Info} ServerStatus 客户端服务管理脚本下载完成 !"
 	fi
-	echo -e "${Info} ServerStatus 客户端服务管理脚本下载完成 !"
 }
 Write_server_config(){
 	cat > ${server_conf}<<-EOF
@@ -724,9 +787,8 @@ Install_ServerStatus_client(){
 Update_ServerStatus_server(){
 	check_installed_server_status
 	check_pid_server
-	[[ ! -z ${PID} ]] && /etc/init.d/status-server stop
+	[[ ! -z ${PID} ]] && Service_Control status-server stop
 	Download_Server_Status_server
-	rm -rf /etc/init.d/status-server
 	Service_Server_Status_server
 	Start_ServerStatus_server
 }
@@ -744,7 +806,7 @@ Update_ServerStatus_client(){
 		cp -f "${client_script}" "${old_settings}"
 	fi
 	check_pid_client
-	[[ ! -z ${PID} ]] && /etc/init.d/status-client stop
+	[[ ! -z ${PID} ]] && Service_Control status-client stop
 	Download_Server_Status_client
 	if [[ -e "${old_settings}" ]]; then
 		Preserve_client_settings "${old_settings}" || exit 1
@@ -753,7 +815,6 @@ Update_ServerStatus_client(){
 		Write_client_settings || exit 1
 	fi
 	rm -f "${client_conf}"
-	rm -rf /etc/init.d/status-client
 	Service_Server_Status_client
 	Start_ServerStatus_client
 }
@@ -762,19 +823,19 @@ Start_ServerStatus_server(){
 	Check_server_config
 	check_pid_server
 	[[ ! -z ${PID} ]] && echo -e "${Error} ServerStatus 正在运行，请检查 !" && exit 1
-	/etc/init.d/status-server start
+	Service_Control status-server start
 }
 Stop_ServerStatus_server(){
 	check_installed_server_status
 	check_pid_server
 	[[ -z ${PID} ]] && echo -e "${Error} ServerStatus 没有运行，请检查 !" && exit 1
-	/etc/init.d/status-server stop
+	Service_Control status-server stop
 }
 Restart_ServerStatus_server(){
 	check_installed_server_status
 	check_pid_server
-	[[ ! -z ${PID} ]] && /etc/init.d/status-server stop
-	/etc/init.d/status-server start
+	[[ ! -z ${PID} ]] && Service_Control status-server stop
+	Service_Control status-server start
 }
 Uninstall_ServerStatus_server(){
 	check_installed_server_status
@@ -783,6 +844,11 @@ Uninstall_ServerStatus_server(){
 	read -e -p "(默认: n):" unyn
 	[[ -z ${unyn} ]] && unyn="n"
 	if [[ ${unyn} == [Yy] ]]; then
+		if [[ -f /etc/systemd/system/status-server.service ]]; then
+			systemd_available && systemctl disable --now status-server >/dev/null 2>&1 || true
+			rm -f /etc/systemd/system/status-server.service
+			systemd_available && systemctl daemon-reload >/dev/null 2>&1 || true
+		fi
 		check_pid_server
 		[[ ! -z $PID ]] && kill -9 ${PID}
 		if client_installed; then
@@ -790,12 +856,9 @@ Uninstall_ServerStatus_server(){
 		else
 			rm -rf "${file}"
 		fi
-		rm -rf "/etc/init.d/status-server"
-		if [[ ${release} = "centos" ]]; then
-			chkconfig --del status-server
-		else
-			update-rc.d -f status-server remove
-		fi
+		rm -f /etc/init.d/status-server
+		chkconfig --del status-server >/dev/null 2>&1 || true
+		update-rc.d -f status-server remove >/dev/null 2>&1 || true
 		echo && echo "ServerStatus 卸载完成 !" && echo
 	else
 		echo && echo "卸载已取消..." && echo
@@ -807,21 +870,21 @@ Start_ServerStatus_client(){
 	check_python3
 	check_pid_client
 	[[ ! -z ${PID} ]] && echo -e "${Error} ServerStatus 正在运行，请检查 !" && exit 1
-	/etc/init.d/status-client start
+	Service_Control status-client start
 }
 Stop_ServerStatus_client(){
 	check_installed_client_status
 	check_client_script
 	check_pid_client
 	[[ -z ${PID} ]] && echo -e "${Error} ServerStatus 没有运行，请检查 !" && exit 1
-	/etc/init.d/status-client stop
+	Service_Control status-client stop
 }
 Restart_ServerStatus_client(){
 	check_installed_client_status
 	check_client_script
 	check_pid_client
-	[[ ! -z ${PID} ]] && /etc/init.d/status-client stop
-	/etc/init.d/status-client start
+	[[ ! -z ${PID} ]] && Service_Control status-client stop
+	Service_Control status-client start
 }
 Uninstall_ServerStatus_client(){
 	check_installed_client_status
@@ -830,6 +893,11 @@ Uninstall_ServerStatus_client(){
 	read -e -p "(默认: n):" unyn
 	[[ -z ${unyn} ]] && unyn="n"
 	if [[ ${unyn} == [Yy] ]]; then
+		if [[ -f /etc/systemd/system/status-client.service ]]; then
+			systemd_available && systemctl disable --now status-client >/dev/null 2>&1 || true
+			rm -f /etc/systemd/system/status-client.service
+			systemd_available && systemctl daemon-reload >/dev/null 2>&1 || true
+		fi
 		check_pid_client
 		[[ ! -z $PID ]] && kill -9 ${PID}
 		if [[ -e "${server_file}/sergate" ]]; then
@@ -837,12 +905,9 @@ Uninstall_ServerStatus_client(){
 		else
 			rm -rf "${file}"
 		fi
-		rm -rf /etc/init.d/status-client
-		if [[ ${release} = "centos" ]]; then
-			chkconfig --del status-client
-		else
-			update-rc.d -f status-client remove
-		fi
+		rm -f /etc/init.d/status-client
+		chkconfig --del status-client >/dev/null 2>&1 || true
+		update-rc.d -f status-client remove >/dev/null 2>&1 || true
 		echo && echo "ServerStatus 卸载完成 !" && echo
 	else
 		echo && echo "卸载已取消..." && echo
@@ -863,11 +928,21 @@ View_ServerStatus_client(){
 ————————————————————"
 }
 View_client_Log(){
+	if systemd_available && [[ -f /etc/systemd/system/status-client.service ]]; then
+		echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志；也可使用 ${Green_font_prefix}journalctl -u status-client -f${Font_color_suffix}" && echo
+		journalctl -u status-client -f
+		return
+	fi
 	[[ ! -e ${client_log_file} ]] && touch ${client_log_file}
 	echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志" && echo -e "如果需要查看完整日志内容，请用 ${Red_font_prefix}cat ${client_log_file}${Font_color_suffix} 命令。" && echo
 	tail -f ${client_log_file}
 }
 View_server_Log(){
+	if systemd_available && [[ -f /etc/systemd/system/status-server.service ]]; then
+		echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志；也可使用 ${Green_font_prefix}journalctl -u status-server -f${Font_color_suffix}" && echo
+		journalctl -u status-server -f
+		return
+	fi
 	[[ ! -e ${server_log_file} ]] && touch ${server_log_file}
 	echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志" && echo -e "如果需要查看完整日志内容，请用 ${Red_font_prefix}cat ${server_log_file}${Font_color_suffix} 命令。" && echo
 	tail -f ${server_log_file}
@@ -875,12 +950,10 @@ View_server_Log(){
 Update_Shell(){
 	sh_new_ver=$(Fetch_Script_Version)
 	[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
-	if [[ -e "/etc/init.d/status-client" ]]; then
-		rm -rf /etc/init.d/status-client
+	if [[ -e "/etc/systemd/system/status-client.service" || -e "/etc/init.d/status-client" ]]; then
 		Service_Server_Status_client
 	fi
-	if [[ -e "/etc/init.d/status-server" ]]; then
-		rm -rf /etc/init.d/status-server
+	if [[ -e "/etc/systemd/system/status-server.service" || -e "/etc/init.d/status-server" ]]; then
 		Service_Server_Status_server
 	fi
 	if ! Download_File "status.sh" "/tmp/status.sh.new"; then

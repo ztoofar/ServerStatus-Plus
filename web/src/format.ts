@@ -12,7 +12,20 @@ export function formatBytes(value: number, digits = 1): string {
 }
 
 export function formatRate(value: number): string {
-  return `${formatBytes(value)}/s`
+  if (!Number.isFinite(value) || value <= 0) return '0B'
+  if (value < 1000) return `${value.toFixed(0)}B`
+  if (value < 1000 * 1000) return `${(value / 1000).toFixed(0)}K`
+  return `${(value / 1000 / 1000).toFixed(1)}M`
+}
+
+export function formatTraffic(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0B'
+  if (value < 1024) return `${value.toFixed(0)}B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(0)}K`
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)}M`
+  if (value < 1024 * 1024 * 1024 * 1024)
+    return `${(value / 1024 / 1024 / 1024).toFixed(2)}G`
+  return `${(value / 1024 / 1024 / 1024 / 1024).toFixed(2)}T`
 }
 
 export function formatUptime(seconds: number): string {

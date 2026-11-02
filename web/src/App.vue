@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useStatus } from './composables/useStatus'
-import { formatBytes, formatRate, formatUptime, percent } from './format'
+import { formatBytes, formatRate, formatTraffic, formatUptime, percent } from './format'
 import MeterBar from './components/MeterBar.vue'
 import type { ServerStatus } from './types'
 
@@ -61,7 +61,7 @@ function network(server: ServerStatus) {
 
 function traffic(server: ServerStatus) {
   return server.connected
-    ? `${formatBytes(server.network_in)} | ${formatBytes(server.network_out)}`
+    ? `${formatTraffic(server.network_in)} | ${formatTraffic(server.network_out)}`
     : '–'
 }
 

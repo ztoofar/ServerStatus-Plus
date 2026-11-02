@@ -28,6 +28,8 @@ repo_owner="ztoofar"
 repo_name="ServerStatus-Plus"
 repo_branch="main"
 repo_raw="https://raw.githubusercontent.com/${repo_owner}/${repo_name}/${repo_branch}"
+repo_cdn="https://cdn.jsdelivr.net/gh/${repo_owner}/${repo_name}@${repo_branch}"
+repo_api="https://api.github.com/repos/${repo_owner}/${repo_name}/contents"
 
 Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
 Info="${Green_font_prefix}[信息]${Font_color_suffix}"
@@ -50,6 +52,45 @@ Setup_proxy(){
 	local safe_proxy
 	safe_proxy="$(echo "$proxy" | sed -E 's#(//)[^/@]+@#\1***@#')"
 	echo -e "${Info} 已启用下载代理: ${safe_proxy}"
+}
+
+# 多源下载：raw.githubusercontent.com -> jsDelivr -> GitHub API（文本）
+Download_File(){
+	local path="$1"
+	local output="$2"
+	local mode="${3:-text}"
+	local url
+	for url in "${repo_raw}/${path}" "${repo_cdn}/${path}"; do
+		rm -f "${output}"
+		if wget --no-check-certificate -t 2 -T 15 -O "${output}" "${url}" >/dev/null 2>&1; then
+			if [[ -s "${output}" ]]; then
+				return 0
+			fi
+		fi
+	done
+	if [[ "${mode}" = "text" ]]; then
+		rm -f "${output}"
+		if wget --no-check-certificate -t 2 -T 15 --header='Accept: application/vnd.github.raw' -O "${output}" "${repo_api}/${path}?ref=${repo_branch}" >/dev/null 2>&1; then
+			if [[ -s "${output}" ]]; then
+				return 0
+			fi
+		fi
+	fi
+	rm -f "${output}"
+	return 1
+}
+Fetch_Script_Version(){
+	local tmp="/tmp/status.version.$$" version
+	if Download_File "status.sh" "${tmp}" text; then
+		version=$(grep 'sh_ver="' "${tmp}" | awk -F "=" '{print $NF}' | sed 's/\"//g' | head -1)
+		rm -f "${tmp}"
+		if [[ -n "${version}" ]]; then
+			echo "${version}"
+			return 0
+		fi
+	fi
+	rm -f "${tmp}"
+	return 1
 }
 
 #检查系统
@@ -114,7 +155,7 @@ Download_Server_Status_server(){
 		*) echo -e "${Error} 不支持的 CPU 架构: $(uname -m)" && exit 1 ;;
 	esac
 	rm -f "sergate"
-	if ! wget --no-check-certificate -O "sergate" "${repo_raw}/bin/${binary}"; then
+	if ! Download_File "bin/${binary}" "sergate" binary; then
 		echo -e "${Error} ServerStatus 服务端下载失败 !" && exit 1
 	fi
 	[[ ! -s "sergate" ]] && echo -e "${Error} ServerStatus 服务端下载失败 !" && exit 1
@@ -137,7 +178,7 @@ Download_Server_Status_client(){
 	check_python3
 	cd "/tmp"
 	rm -f "sergate-client.py"
-	if ! wget --no-check-certificate -O "sergate-client.py" "${repo_raw}/client/sergate-client.py"; then
+	if ! Download_File "client/sergate-client.py" "sergate-client.py" text; then
 		echo -e "${Error} ServerStatus 客户端下载失败 !" && exit 1
 	fi
 	[[ ! -s "sergate-client.py" ]] && echo -e "${Error} ServerStatus 客户端下载失败 !" && exit 1
@@ -164,14 +205,14 @@ Download_Server_Status_client(){
 }
 Service_Server_Status_server(){
 	if [[ ${release} = "centos" ]]; then
-		if ! wget --no-check-certificate "${repo_raw}/service/server_status_server_centos" -O /etc/init.d/status-server; then
+		if ! Download_File "service/server_status_server_centos" "/etc/init.d/status-server" text; then
 			echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-server
 		chkconfig --add status-server
 		chkconfig status-server on
 	else
-		if ! wget --no-check-certificate "${repo_raw}/service/server_status_server_debian" -O /etc/init.d/status-server; then
+		if ! Download_File "service/server_status_server_debian" "/etc/init.d/status-server" text; then
 			echo -e "${Error} ServerStatus 服务端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-server
@@ -181,14 +222,14 @@ Service_Server_Status_server(){
 }
 Service_Server_Status_client(){
 	if [[ ${release} = "centos" ]]; then
-		if ! wget --no-check-certificate "${repo_raw}/service/server_status_client_centos" -O /etc/init.d/status-client; then
+		if ! Download_File "service/server_status_client_centos" "/etc/init.d/status-client" text; then
 			echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-client
 		chkconfig --add status-client
 		chkconfig status-client on
 	else
-		if ! wget --no-check-certificate "${repo_raw}/service/server_status_client_debian" -O /etc/init.d/status-client; then
+		if ! Download_File "service/server_status_client_debian" "/etc/init.d/status-client" text; then
 			echo -e "${Error} ServerStatus 客户端服务管理脚本下载失败 !" && exit 1
 		fi
 		chmod +x /etc/init.d/status-client
@@ -766,7 +807,7 @@ View_server_Log(){
 	tail -f ${server_log_file}
 }
 Update_Shell(){
-	sh_new_ver=$(wget --no-check-certificate -qO- -t1 -T3 "${repo_raw}/status.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1) && sh_new_type="github"
+	sh_new_ver=$(Fetch_Script_Version)
 	[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
 	if [[ -e "/etc/init.d/status-client" ]]; then
 		rm -rf /etc/init.d/status-client
@@ -776,7 +817,10 @@ Update_Shell(){
 		rm -rf /etc/init.d/status-server
 		Service_Server_Status_server
 	fi
-	wget -N --no-check-certificate "${repo_raw}/status.sh" && chmod +x status.sh
+	if ! Download_File "status.sh" "/tmp/status.sh.new" text; then
+		echo -e "${Error} 脚本下载失败 !" && exit 1
+	fi
+	mv -f "/tmp/status.sh.new" status.sh && chmod +x status.sh
 	if [[ -e "${client_legacy_bin}" && ! -e "${client_script}" ]]; then
 		echo -e "${Tip} 检测到旧版 Rust 客户端，请进入客户端菜单执行「更新 客户端」以迁移到 Python 客户端。"
 	fi

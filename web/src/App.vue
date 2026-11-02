@@ -75,20 +75,21 @@ function uptime(server: ServerStatus) {
     <div v-if="error && !status" class="notice error">无法连接服务端：{{ error }}</div>
     <div v-else-if="!status" class="notice">正在加载…</div>
     <div v-else class="table-wrap">
-      <table class="server-table">
+      <div class="table-scroll">
+        <table class="server-table">
         <thead>
           <tr>
             <th>状态</th>
             <th>节点名</th>
-            <th>虚拟化</th>
-            <th>位置</th>
-            <th>在线时间</th>
-            <th>负载</th>
+            <th class="col-type">虚拟化</th>
+            <th class="col-location">位置</th>
+            <th class="col-uptime">在线时间</th>
+            <th class="col-load">负载</th>
             <th>网络(B/s) ↓|↑</th>
-            <th>流量(B) ↓|↑</th>
+            <th class="col-traffic">流量(B) ↓|↑</th>
             <th>CPU</th>
             <th>内存</th>
-            <th>硬盘</th>
+            <th class="col-hdd">硬盘</th>
           </tr>
         </thead>
         <tbody>
@@ -107,12 +108,12 @@ function uptime(server: ServerStatus) {
                 </span>
               </td>
               <td class="name-cell">{{ server.name }}</td>
-              <td>{{ server.type || '–' }}</td>
-              <td>{{ server.location || '–' }}</td>
-              <td>{{ uptime(server) }}</td>
-              <td>{{ server.connected ? load(server) : '–' }}</td>
+              <td class="col-type">{{ server.type || '–' }}</td>
+              <td class="col-location">{{ server.location || '–' }}</td>
+              <td class="col-uptime">{{ uptime(server) }}</td>
+              <td class="col-load">{{ server.connected ? load(server) : '–' }}</td>
               <td>{{ network(server) }}</td>
-              <td>{{ traffic(server) }}</td>
+              <td class="col-traffic">{{ traffic(server) }}</td>
               <td class="meter-cell">
                 <MeterBar
                   :value="cpu(server)"
@@ -127,7 +128,7 @@ function uptime(server: ServerStatus) {
                   :active="server.connected"
                 />
               </td>
-              <td class="meter-cell">
+              <td class="meter-cell col-hdd">
                 <MeterBar
                   :value="disk(server)"
                   :text="server.connected ? `${disk(server)}%` : '–'"
@@ -172,18 +173,18 @@ function uptime(server: ServerStatus) {
           </tr>
         </tbody>
       </table>
+      </div>
+      <div class="table-meta">
+        <span class="updated">{{ updatedText }}</span>
+        <button
+          class="theme-btn"
+          type="button"
+          :aria-label="theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
+          @click="toggleTheme"
+        >
+          {{ theme === 'dark' ? '☀' : '☾' }}
+        </button>
+      </div>
     </div>
-
-    <footer class="statusbar">
-      <span class="updated">{{ updatedText }}</span>
-      <button
-        class="theme-btn"
-        type="button"
-        :aria-label="theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
-        @click="toggleTheme"
-      >
-        {{ theme === 'dark' ? '☀' : '☾' }}
-      </button>
-    </footer>
   </div>
 </template>

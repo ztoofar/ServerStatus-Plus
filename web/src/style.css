@@ -119,7 +119,7 @@ button {
 }
 
 .table-wrap {
-  overflow-x: auto;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--panel);
@@ -127,9 +127,12 @@ button {
   backdrop-filter: blur(12px);
 }
 
+.table-scroll {
+  overflow-x: auto;
+}
+
 .server-table {
   width: 100%;
-  min-width: 1080px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -144,13 +147,14 @@ button {
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
-  text-align: left;
+  text-align: center;
   white-space: nowrap;
 }
 
 .server-table tbody td {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
+  text-align: center;
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -302,20 +306,91 @@ button {
   text-align: center;
 }
 
-.statusbar {
+.table-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: auto;
-  padding: 20px 2px 4px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 12px;
+}
+
+@media (max-width: 992px) {
+  .col-location {
+    display: none;
+  }
 }
 
 @media (max-width: 720px) {
   .app {
     padding: 14px;
+  }
+
+  .col-type,
+  .col-location,
+  .col-uptime {
+    display: none;
+  }
+
+  .server-table {
+    font-size: 12px;
+  }
+
+  .server-table th,
+  .server-table td {
+    padding: 8px 6px;
+  }
+
+  .meter-cell {
+    min-width: 70px;
+  }
+}
+
+@media (max-width: 600px) {
+  .col-load {
+    display: none;
+  }
+}
+
+@media (max-width: 533px) {
+  .col-traffic {
+    display: none;
+  }
+}
+
+@media (max-width: 450px) {
+  body {
+    font-size: 10px;
+  }
+
+  .app {
+    padding: 0;
+  }
+
+  .col-hdd {
+    display: none;
+  }
+
+  .name-cell {
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .meter-cell {
+    min-width: 40px;
+    max-width: 60px;
+  }
+
+  .server-table {
+    font-size: 11px;
+  }
+
+  .server-table th,
+  .server-table td {
+    padding: 6px 4px;
   }
 }
 

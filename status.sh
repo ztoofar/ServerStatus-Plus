@@ -5,11 +5,11 @@ export PATH
 #=================================================
 #	System Required: Debian 12/13 (client), CentOS/Debian/Ubuntu (server)
 #	Description: ServerStatus-Plus client + server installer
-#	Version: 2.0.0
+#	Version: 2.0.1
 #	Maintainer: ztoofar - https://github.com/ztoofar/ServerStatus-Plus
 #=================================================
 
-sh_ver="2.0.0"
+sh_ver="2.0.1"
 filepath=$(cd "$(dirname "$0")"; pwd)
 file_1=$(echo -e "${filepath}"|awk -F "$0" '{print $1}')
 file="/usr/local/ServerStatus"
@@ -76,7 +76,7 @@ check_installed_client_status(){
 	[[ ! -e "${client_file}/sergate-client" ]] && echo -e "${Error} ServerStatus 客户端没有安装，请检查 !" && exit 1
 }
 check_pid_server(){
-	PID=`ps -ef| grep "sergate"| grep -v grep| grep -v ".sh"| grep -v "init.d"| grep -v "service"| awk '{print $2}'`
+	PID=`ps -ef| grep -E '(^|/)sergate( |$)'| grep -v grep| grep -v ".sh"| grep -v "init.d"| grep -v "service"| awk '{print $2}'`
 }
 check_pid_client(){
 	PID=`ps -ef| grep "sergate-client"| grep -v grep| grep -v ".sh"| grep -v "init.d"| grep -v "service"| awk '{print $2}'`
@@ -219,17 +219,6 @@ Write_client_config(){
 }
 EOF
 }
-Read_config_server(){
-	if [[ -e "${server_conf}" ]]; then
-		server_port="$(${jq_file} -r '.listen // ":35601"' "${server_conf}" 2>/dev/null | sed 's/.*://')"
-		server_http_port="$(${jq_file} -r '.http_listen // ":8080"' "${server_conf}" 2>/dev/null | sed 's/.*://')"
-	else
-		server_port="35601"
-		server_http_port="8080"
-	fi
-	[[ -z "${server_port}" ]] && server_port="35601"
-	[[ -z "${server_http_port}" ]] && server_http_port="8080"
-}
 Set_server(){
 	echo -e "请输入 ServerStatus 服务端的 IP/域名[server]"
 	read -e -p "(默认: 127.0.0.1):" server_s
@@ -348,6 +337,7 @@ Set_config_client(){
 }
 Set_ServerStatus_server(){
 	check_installed_server_status
+	Check_server_config
 	echo && echo -e " 你要做什么？
 	
  ${Green_font_prefix} 1.${Font_color_suffix} 添加 节点配置
@@ -384,11 +374,9 @@ Set_ServerStatus_server(){
 	elif [[ ${server_num} == "9" ]]; then
 		Modify_ServerStatus_server_disabled
 	elif [[ ${server_num} == "10" ]]; then
-		Read_config_server
-		Del_iptables "${server_port}"
 		Set_server_port
-		${jq_file} --arg listen ":${server_port_s}" '.listen = $listen' "${server_conf}" > "${server_conf}.tmp" && mv "${server_conf}.tmp" "${server_conf}"
-		Add_iptables "${server_port_s}"
+		Jq_edit '.listen = $listen' --arg listen ":${server_port_s}"
+		echo -e "${Tip} 请自行在防火墙或云安全组中放行新端口 ${server_port_s} !"
 	else
 		echo -e "${Error} 请输入正确的数字[1-10]" && exit 1
 	fi
@@ -419,19 +407,33 @@ List_ServerStatus_server(){
 	echo && echo -e "节点总数 ${Green_font_prefix}"${conf_text_total}"${Font_color_suffix}"
 	echo -e ${conf_list_all}
 }
+Check_server_config(){
+	if [[ ! -e "${server_conf}" ]]; then
+		echo -e "${Error} 服务端配置文件不存在 !" && exit 1
+	fi
+	if [[ -x "${jq_file}" ]] && ! "${jq_file}" empty "${server_conf}" >/dev/null 2>&1; then
+		echo -e "${Error} 服务端配置 JSON 格式错误，请检查 ${server_conf} !" && exit 1
+	fi
+}
+Jq_edit(){
+	local filter="$1"
+	shift
+	local tmp
+	tmp="$(mktemp)"
+	if ${jq_file} "$@" "$filter" "${server_conf}" > "${tmp}" && ${jq_file} empty "${tmp}" >/dev/null 2>&1; then
+		mv "${tmp}" "${server_conf}"
+	else
+		rm -f "${tmp}"
+		echo -e "${Error} 配置修改失败，原配置未改动 !" && exit 1
+	fi
+}
 Add_ServerStatus_server(){
 	Set_config_server
-	Set_username_ch=$(cat ${server_conf}|grep '"username": "'"${username_s}"'"')
-	[[ ! -z "${Set_username_ch}" ]] && echo -e "${Error} 用户名已被使用 !" && exit 1
-	sed -i '3i\  },' ${server_conf}
-	sed -i '3i\   "disabled": false' ${server_conf}
-	sed -i '3i\   "location": "'"${location_s}"'",' ${server_conf}
-	sed -i '3i\   "host": "'"None"'",' ${server_conf}
-	sed -i '3i\   "type": "'"${type_s}"'",' ${server_conf}
-	sed -i '3i\   "name": "'"${name_s}"'",' ${server_conf}
-	sed -i '3i\   "password": "'"${password_s}"'",' ${server_conf}
-	sed -i '3i\   "username": "'"${username_s}"'",' ${server_conf}
-	sed -i '3i\  {' ${server_conf}
+	local exists
+	exists="$(${jq_file} -r --arg u "${username_s}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -n "${exists}" ]] && echo -e "${Error} 用户名已被使用 !" && exit 1
+	Jq_edit '.servers += [{"id": $id, "username": $username, "password": $password, "name": $name, "type": $type, "host": "None", "location": $location, "group": "", "tags": [], "disabled": false}]' \
+		--arg id "${username_s}" --arg username "${username_s}" --arg password "${password_s}" --arg name "${name_s}" --arg type "${type_s}" --arg location "${location_s}"
 	echo -e "${Info} 添加节点成功 ${Green_font_prefix}[ 节点名称: ${name_s}, 节点用户名: ${username_s}, 节点密码: ${password_s} ]${Font_color_suffix} !"
 }
 Del_ServerStatus_server(){
@@ -440,159 +442,118 @@ Del_ServerStatus_server(){
 	echo -e "请输入要删除的节点用户名"
 	read -e -p "(默认: 取消):" del_server_username
 	[[ -z "${del_server_username}" ]] && echo -e "已取消..." && exit 1
-	del_username=`cat -n ${server_conf}|grep '"username": "'"${del_server_username}"'"'|awk '{print $1}'`
-	if [[ ! -z ${del_username} ]]; then
-		del_username_min=$(echo $((${del_username}-1)))
-		del_username_max=$(echo $((${del_username}+7)))
-		del_username_max_text=$(sed -n "${del_username_max}p" ${server_conf})
-		del_username_max_text_last=`echo ${del_username_max_text:((${#del_username_max_text} - 1))}`
-		if [[ ${del_username_max_text_last} != "," ]]; then
-			del_list_num=$(echo $((${del_username_min}-1)))
-			sed -i "${del_list_num}s/,$//g" ${server_conf}
-		fi
-		sed -i "${del_username_min},${del_username_max}d" ${server_conf}
-		echo -e "${Info} 节点删除成功 ${Green_font_prefix}[ 节点用户名: ${del_server_username} ]${Font_color_suffix} "
-	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
-	fi
+	local exists
+	exists="$(${jq_file} -r --arg u "${del_server_username}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -z "${exists}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Jq_edit '.servers |= map(select(.username != $u))' --arg u "${del_server_username}"
+	echo -e "${Info} 节点删除成功 ${Green_font_prefix}[ 节点用户名: ${del_server_username} ]${Font_color_suffix}"
 }
 Modify_ServerStatus_server_username(){
 	List_ServerStatus_server
 	echo -e "请输入要修改的节点用户名"
 	read -e -p "(默认: 取消):" manually_username
 	[[ -z "${manually_username}" ]] && echo -e "已取消..." && exit 1
-	Set_username_num=$(cat -n ${server_conf}|grep '"username": "'"${manually_username}"'"'|awk '{print $1}')
-	if [[ ! -z ${Set_username_num} ]]; then
-		Set_username
-		Set_username_ch=$(cat ${server_conf}|grep '"username": "'"${username_s}"'"')
-		[[ ! -z "${Set_username_ch}" ]] && echo -e "${Error} 用户名已被使用 !" && exit 1
-		sed -i "${Set_username_num}"'s/"username": "'"${manually_username}"'"/"username": "'"${username_s}"'"/g' ${server_conf}
-		echo -e "${Info} 修改成功 [ 原节点用户名: ${manually_username}, 新节点用户名: ${username_s} ]"
-	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	local exists
+	exists="$(${jq_file} -r --arg u "${manually_username}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -z "${exists}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Set_username
+	local new_exists
+	new_exists="$(${jq_file} -r --arg u "${username_s}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	if [[ -n "${new_exists}" && "${username_s}" != "${manually_username}" ]]; then
+		echo -e "${Error} 用户名已被使用 !" && exit 1
 	fi
+	Jq_edit '(.servers[] | select(.username == $u) | .username) = $new' --arg u "${manually_username}" --arg new "${username_s}"
+	echo -e "${Info} 修改成功 [ 原节点用户名: ${manually_username}, 新节点用户名: ${username_s} ]"
 }
 Modify_ServerStatus_server_password(){
 	List_ServerStatus_server
 	echo -e "请输入要修改的节点用户名"
 	read -e -p "(默认: 取消):" manually_username
 	[[ -z "${manually_username}" ]] && echo -e "已取消..." && exit 1
-	Set_username_num=$(cat -n ${server_conf}|grep '"username": "'"${manually_username}"'"'|awk '{print $1}')
-	if [[ ! -z ${Set_username_num} ]]; then
-		Set_password
-		Set_password_num_a=$(echo $((${Set_username_num}+1)))
-		Set_password_num_text=$(sed -n "${Set_password_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_password_num_a}"'s/"password": "'"${Set_password_num_text}"'"/"password": "'"${password_s}"'"/g' ${server_conf}
-		echo -e "${Info} 修改成功 [ 原节点密码: ${Set_password_num_text}, 新节点密码: ${password_s} ]"
-	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
-	fi
+	local exists
+	exists="$(${jq_file} -r --arg u "${manually_username}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -z "${exists}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Set_password
+	Jq_edit '(.servers[] | select(.username == $u) | .password) = $new' --arg u "${manually_username}" --arg new "${password_s}"
+	echo -e "${Info} 修改成功 [ 节点用户名: ${manually_username}, 新节点密码: ${password_s} ]"
 }
 Modify_ServerStatus_server_name(){
 	List_ServerStatus_server
 	echo -e "请输入要修改的节点用户名"
 	read -e -p "(默认: 取消):" manually_username
 	[[ -z "${manually_username}" ]] && echo -e "已取消..." && exit 1
-	Set_username_num=$(cat -n ${server_conf}|grep '"username": "'"${manually_username}"'"'|awk '{print $1}')
-	if [[ ! -z ${Set_username_num} ]]; then
-		Set_name
-		Set_name_num_a=$(echo $((${Set_username_num}+2)))
-		Set_name_num_a_text=$(sed -n "${Set_name_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_name_num_a}"'s/"name": "'"${Set_name_num_a_text}"'"/"name": "'"${name_s}"'"/g' ${server_conf}
-		echo -e "${Info} 修改成功 [ 原节点名称: ${Set_name_num_a_text}, 新节点名称: ${name_s} ]"
-	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
-	fi
+	local exists
+	exists="$(${jq_file} -r --arg u "${manually_username}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -z "${exists}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Set_name
+	Jq_edit '(.servers[] | select(.username == $u) | .name) = $new' --arg u "${manually_username}" --arg new "${name_s}"
+	echo -e "${Info} 修改成功 [ 节点用户名: ${manually_username}, 新节点名称: ${name_s} ]"
 }
 Modify_ServerStatus_server_type(){
 	List_ServerStatus_server
 	echo -e "请输入要修改的节点用户名"
 	read -e -p "(默认: 取消):" manually_username
 	[[ -z "${manually_username}" ]] && echo -e "已取消..." && exit 1
-	Set_username_num=$(cat -n ${server_conf}|grep '"username": "'"${manually_username}"'"'|awk '{print $1}')
-	if [[ ! -z ${Set_username_num} ]]; then
-		Set_type
-		Set_type_num_a=$(echo $((${Set_username_num}+3)))
-		Set_type_num_a_text=$(sed -n "${Set_type_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_type_num_a}"'s/"type": "'"${Set_type_num_a_text}"'"/"type": "'"${type_s}"'"/g' ${server_conf}
-		echo -e "${Info} 修改成功 [ 原节点虚拟化: ${Set_type_num_a_text}, 新节点虚拟化: ${type_s} ]"
-	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
-	fi
+	local exists
+	exists="$(${jq_file} -r --arg u "${manually_username}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -z "${exists}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Set_type
+	Jq_edit '(.servers[] | select(.username == $u) | .type) = $new' --arg u "${manually_username}" --arg new "${type_s}"
+	echo -e "${Info} 修改成功 [ 节点用户名: ${manually_username}, 新节点虚拟化: ${type_s} ]"
 }
 Modify_ServerStatus_server_location(){
 	List_ServerStatus_server
 	echo -e "请输入要修改的节点用户名"
 	read -e -p "(默认: 取消):" manually_username
 	[[ -z "${manually_username}" ]] && echo -e "已取消..." && exit 1
-	Set_username_num=$(cat -n ${server_conf}|grep '"username": "'"${manually_username}"'"'|awk '{print $1}')
-	if [[ ! -z ${Set_username_num} ]]; then
-		Set_location
-		Set_location_num_a=$(echo $((${Set_username_num}+5)))
-		Set_location_num_a_text=$(sed -n "${Set_location_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_location_num_a}"'s/"location": "'"${Set_location_num_a_text}"'"/"location": "'"${location_s}"'"/g' ${server_conf}
-		echo -e "${Info} 修改成功 [ 原节点位置: ${Set_location_num_a_text}, 新节点位置: ${location_s} ]"
-	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
-	fi
+	local exists
+	exists="$(${jq_file} -r --arg u "${manually_username}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -z "${exists}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Set_location
+	Jq_edit '(.servers[] | select(.username == $u) | .location) = $new' --arg u "${manually_username}" --arg new "${location_s}"
+	echo -e "${Info} 修改成功 [ 节点用户名: ${manually_username}, 新节点位置: ${location_s} ]"
 }
 Modify_ServerStatus_server_all(){
 	List_ServerStatus_server
 	echo -e "请输入要修改的节点用户名"
 	read -e -p "(默认: 取消):" manually_username
 	[[ -z "${manually_username}" ]] && echo -e "已取消..." && exit 1
-	Set_username_num=$(cat -n ${server_conf}|grep '"username": "'"${manually_username}"'"'|awk '{print $1}')
-	if [[ ! -z ${Set_username_num} ]]; then
-		Set_username
-		Set_password
-		Set_name
-		Set_type
-		Set_location
-		sed -i "${Set_username_num}"'s/"username": "'"${manually_username}"'"/"username": "'"${username_s}"'"/g' ${server_conf}
-		Set_password_num_a=$(echo $((${Set_username_num}+1)))
-		Set_password_num_text=$(sed -n "${Set_password_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_password_num_a}"'s/"password": "'"${Set_password_num_text}"'"/"password": "'"${password_s}"'"/g' ${server_conf}
-		Set_name_num_a=$(echo $((${Set_username_num}+2)))
-		Set_name_num_a_text=$(sed -n "${Set_name_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_name_num_a}"'s/"name": "'"${Set_name_num_a_text}"'"/"name": "'"${name_s}"'"/g' ${server_conf}
-		Set_type_num_a=$(echo $((${Set_username_num}+3)))
-		Set_type_num_a_text=$(sed -n "${Set_type_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_type_num_a}"'s/"type": "'"${Set_type_num_a_text}"'"/"type": "'"${type_s}"'"/g' ${server_conf}
-		Set_location_num_a=$(echo $((${Set_username_num}+5)))
-		Set_location_num_a_text=$(sed -n "${Set_location_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		sed -i "${Set_location_num_a}"'s/"location": "'"${Set_location_num_a_text}"'"/"location": "'"${location_s}"'"/g' ${server_conf}
-		echo -e "${Info} 修改成功。"
-	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	local exists
+	exists="$(${jq_file} -r --arg u "${manually_username}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	[[ -z "${exists}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Set_username
+	Set_password
+	Set_name
+	Set_type
+	Set_location
+	local new_exists
+	new_exists="$(${jq_file} -r --arg u "${username_s}" '.servers[]? | select(.username == $u) | .username' "${server_conf}")"
+	if [[ -n "${new_exists}" && "${username_s}" != "${manually_username}" ]]; then
+		echo -e "${Error} 用户名已被使用 !" && exit 1
 	fi
+	Jq_edit '(.servers[] | select(.username == $u)) |= (.username = $username | .password = $password | .name = $name | .type = $type | .location = $location)' \
+		--arg u "${manually_username}" --arg username "${username_s}" --arg password "${password_s}" --arg name "${name_s}" --arg type "${type_s}" --arg location "${location_s}"
+	echo -e "${Info} 修改成功。"
 }
 Modify_ServerStatus_server_disabled(){
 	List_ServerStatus_server
 	echo -e "请输入要修改的节点用户名"
 	read -e -p "(默认: 取消):" manually_username
 	[[ -z "${manually_username}" ]] && echo -e "已取消..." && exit 1
-	Set_username_num=$(cat -n ${server_conf}|grep '"username": "'"${manually_username}"'"'|awk '{print $1}')
-	if [[ ! -z ${Set_username_num} ]]; then
-		Set_disabled_num_a=$(echo $((${Set_username_num}+6)))
-		Set_disabled_num_a_text=$(sed -n "${Set_disabled_num_a}p" ${server_conf}|sed 's/\"//g;s/,$//g'|awk -F ": " '{print $2}')
-		if [[ ${Set_disabled_num_a_text} == "false" ]]; then
-			disabled_s="true"
-		else
-			disabled_s="false"
-		fi
-		sed -i "${Set_disabled_num_a}"'s/"disabled": '"${Set_disabled_num_a_text}"'/"disabled": '"${disabled_s}"'/g' ${server_conf}
-		echo -e "${Info} 修改成功 [ 原禁用状态: ${Set_disabled_num_a_text}, 新禁用状态: ${disabled_s} ]"
+	local old
+	old="$(${jq_file} -r --arg u "${manually_username}" '(.servers[]? | select(.username == $u) | .disabled) // empty' "${server_conf}")"
+	[[ -z "${old}" ]] && echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+	Jq_edit '(.servers[] | select(.username == $u) | .disabled) |= not' --arg u "${manually_username}"
+	if [[ "${old}" == "true" ]]; then
+		echo -e "${Info} 修改成功 [ 原禁用状态: true, 新禁用状态: false ]"
 	else
-		echo -e "${Error} 请输入正确的节点用户名 !" && exit 1
+		echo -e "${Info} 修改成功 [ 原禁用状态: false, 新禁用状态: true ]"
 	fi
 }
 Set_ServerStatus_client(){
 	check_installed_client_status
 	Set_config_client
-	Read_config_client
-	Del_iptables_OUT "${client_port}"
 	Write_client_config
-	Add_iptables_OUT "${server_port_s}"
 	Restart_ServerStatus_client
 }
 Install_jq(){
@@ -622,13 +583,6 @@ Install_ServerStatus_server(){
 	Service_Server_Status_server
 	echo -e "${Info} 开始写入 配置文件..."
 	Write_server_config
-	echo -e "${Info} 开始设置 iptables防火墙..."
-	Set_iptables
-	echo -e "${Info} 开始添加 iptables防火墙规则..."
-	Add_iptables "${server_port_s}"
-	Add_iptables "${server_http_port_s}"
-	echo -e "${Info} 开始保存 iptables防火墙规则..."
-	Save_iptables
 	echo -e "${Info} 所有步骤 安装完毕，开始启动..."
 	Start_ServerStatus_server
 	echo -e "${Info} 面板端口：${server_http_port_s} ，网页已内嵌到 sergate，无需单独部署 web 目录。"
@@ -644,12 +598,6 @@ Install_ServerStatus_client(){
 	Write_client_config
 	echo -e "${Info} 开始下载/安装 服务脚本(init)..."
 	Service_Server_Status_client
-	echo -e "${Info} 开始设置 iptables防火墙..."
-	Set_iptables
-	echo -e "${Info} 开始添加 iptables防火墙规则..."
-	Add_iptables_OUT "${server_port_s}"
-	echo -e "${Info} 开始保存 iptables防火墙规则..."
-	Save_iptables
 	echo -e "${Info} 所有步骤 安装完毕，开始启动..."
 	Start_ServerStatus_client
 }
@@ -673,6 +621,7 @@ Update_ServerStatus_client(){
 }
 Start_ServerStatus_server(){
 	check_installed_server_status
+	Check_server_config
 	check_pid_server
 	[[ ! -z ${PID} ]] && echo -e "${Error} ServerStatus 正在运行，请检查 !" && exit 1
 	/etc/init.d/status-server start
@@ -698,10 +647,6 @@ Uninstall_ServerStatus_server(){
 	if [[ ${unyn} == [Yy] ]]; then
 		check_pid_server
 		[[ ! -z $PID ]] && kill -9 ${PID}
-		Read_config_server
-		Del_iptables "${server_port}"
-		Del_iptables "${server_http_port}"
-		Save_iptables
 		if [[ -e "${client_file}/sergate-client" ]]; then
 			rm -rf "${server_file}"
 		else
@@ -745,9 +690,6 @@ Uninstall_ServerStatus_client(){
 	if [[ ${unyn} == [Yy] ]]; then
 		check_pid_client
 		[[ ! -z $PID ]] && kill -9 ${PID}
-		Read_config_client
-		Del_iptables_OUT "${client_port}"
-		Save_iptables
 		if [[ -e "${server_file}/sergate" ]]; then
 			rm -rf "${client_file}"
 		else
@@ -778,51 +720,14 @@ View_ServerStatus_client(){
 ————————————————————"
 }
 View_client_Log(){
-	[[ ! -e ${client_log_file} ]] && echo -e "${Error} 没有找到日志文件 !" && exit 1
+	[[ ! -e ${client_log_file} ]] && touch ${client_log_file}
 	echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志" && echo -e "如果需要查看完整日志内容，请用 ${Red_font_prefix}cat ${client_log_file}${Font_color_suffix} 命令。" && echo
 	tail -f ${client_log_file}
 }
 View_server_Log(){
-	[[ ! -e ${erver_log_file} ]] && echo -e "${Error} 没有找到日志文件 !" && exit 1
-	echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志" && echo -e "如果需要查看完整日志内容，请用 ${Red_font_prefix}cat ${erver_log_file}${Font_color_suffix} 命令。" && echo
-	tail -f ${erver_log_file}
-}
-Add_iptables_OUT(){
-	iptables_ADD_OUT_port=$1
-	iptables -I OUTPUT -m state --state NEW -m tcp -p tcp --dport ${iptables_ADD_OUT_port} -j ACCEPT
-	iptables -I OUTPUT -m state --state NEW -m udp -p udp --dport ${iptables_ADD_OUT_port} -j ACCEPT
-}
-Del_iptables_OUT(){
-	iptables_DEL_OUT_port=$1
-	iptables -D OUTPUT -m state --state NEW -m tcp -p tcp --dport ${iptables_DEL_OUT_port} -j ACCEPT
-	iptables -D OUTPUT -m state --state NEW -m udp -p udp --dport ${iptables_DEL_OUT_port} -j ACCEPT
-}
-Add_iptables(){
-	iptables_ADD_IN_port=$1
-	iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport ${iptables_ADD_IN_port} -j ACCEPT
-	iptables -I INPUT -m state --state NEW -m udp -p udp --dport ${iptables_ADD_IN_port} -j ACCEPT
-}
-Del_iptables(){
-	iptables_DEL_IN_port=$1
-	iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport ${iptables_DEL_IN_port} -j ACCEPT
-	iptables -D INPUT -m state --state NEW -m udp -p udp --dport ${iptables_DEL_IN_port} -j ACCEPT
-}
-Save_iptables(){
-	if [[ ${release} == "centos" ]]; then
-		service iptables save
-	else
-		iptables-save > /etc/iptables.up.rules
-	fi
-}
-Set_iptables(){
-	if [[ ${release} == "centos" ]]; then
-		service iptables save
-		chkconfig --level 2345 iptables on
-	else
-		iptables-save > /etc/iptables.up.rules
-		echo -e '#!/bin/bash\n/sbin/iptables-restore < /etc/iptables.up.rules' > /etc/network/if-pre-up.d/iptables
-		chmod +x /etc/network/if-pre-up.d/iptables
-	fi
+	[[ ! -e ${server_log_file} ]] && touch ${server_log_file}
+	echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志" && echo -e "如果需要查看完整日志内容，请用 ${Red_font_prefix}cat ${server_log_file}${Font_color_suffix} 命令。" && echo
+	tail -f ${server_log_file}
 }
 Update_Shell(){
 	sh_new_ver=$(wget --no-check-certificate -qO- -t1 -T3 "${repo_raw}/status.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1) && sh_new_type="github"

@@ -5,11 +5,11 @@ export PATH
 #=================================================
 #	System Required: Debian 12/13 (client), CentOS/Debian/Ubuntu (server)
 #	Description: ServerStatus-Plus client + server installer
-#	Version: 2.0.1
+#	Version: 2.0.2
 #	Maintainer: ztoofar - https://github.com/ztoofar/ServerStatus-Plus
 #=================================================
 
-sh_ver="2.0.1"
+sh_ver="2.0.2"
 filepath=$(cd "$(dirname "$0")"; pwd)
 file_1=$(echo -e "${filepath}"|awk -F "$0" '{print $1}')
 file="/usr/local/ServerStatus"
@@ -744,6 +744,7 @@ Update_Shell(){
 	echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
 }
 menu_client(){
+while true; do
 echo && echo -e "  ServerStatus 一键安装管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
   -- ServerStatus-Plus | github.com/ztoofar/ServerStatus-Plus --
   
@@ -773,47 +774,67 @@ else
 	echo -e " 当前状态: 客户端 ${Red_font_prefix}未安装${Font_color_suffix}"
 fi
 echo
-read -e -p " 请输入数字 [0-10]:" num
+if ! read -e -p " 请输入数字 [0-10/q]:" num; then
+	echo
+	exit 0
+fi
 case "$num" in
 	0)
 	Update_Shell
 	;;
 	1)
-	Install_ServerStatus_client
+	( Install_ServerStatus_client )
+	continue
 	;;
 	2)
-	Update_ServerStatus_client
+	( Update_ServerStatus_client )
+	continue
 	;;
 	3)
-	Uninstall_ServerStatus_client
+	( Uninstall_ServerStatus_client )
+	continue
 	;;
 	4)
-	Start_ServerStatus_client
+	( Start_ServerStatus_client )
+	continue
 	;;
 	5)
-	Stop_ServerStatus_client
+	( Stop_ServerStatus_client )
+	continue
 	;;
 	6)
-	Restart_ServerStatus_client
+	( Restart_ServerStatus_client )
+	continue
 	;;
 	7)
-	Set_ServerStatus_client
+	( Set_ServerStatus_client )
+	continue
 	;;
 	8)
-	View_ServerStatus_client
+	( View_ServerStatus_client )
+	continue
 	;;
 	9)
-	View_client_Log
+	( View_client_Log )
+	continue
 	;;
 	10)
-	menu_server
+	( menu_server )
+	continue
+	;;
+	q|Q)
+	echo "已退出"
+	exit 0
 	;;
 	*)
-	echo "请输入正确数字 [0-10]"
+	echo "请输入正确数字 [0-10/q]"
+	continue
 	;;
 esac
+done
 }
 menu_server(){
+while true; do
 echo && echo -e "  ServerStatus 一键安装管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
   -- ServerStatus-Plus | github.com/ztoofar/ServerStatus-Plus --
   
@@ -843,45 +864,64 @@ else
 	echo -e " 当前状态: 服务端 ${Red_font_prefix}未安装${Font_color_suffix}"
 fi
 echo
-read -e -p " 请输入数字 [0-10]:" num
+if ! read -e -p " 请输入数字 [0-10/q]:" num; then
+	echo
+	exit 0
+fi
 case "$num" in
 	0)
 	Update_Shell
 	;;
 	1)
-	Install_ServerStatus_server
+	( Install_ServerStatus_server )
+	continue
 	;;
 	2)
-	Update_ServerStatus_server
+	( Update_ServerStatus_server )
+	continue
 	;;
 	3)
-	Uninstall_ServerStatus_server
+	( Uninstall_ServerStatus_server )
+	continue
 	;;
 	4)
-	Start_ServerStatus_server
+	( Start_ServerStatus_server )
+	continue
 	;;
 	5)
-	Stop_ServerStatus_server
+	( Stop_ServerStatus_server )
+	continue
 	;;
 	6)
-	Restart_ServerStatus_server
+	( Restart_ServerStatus_server )
+	continue
 	;;
 	7)
-	Set_ServerStatus_server
+	( Set_ServerStatus_server )
+	continue
 	;;
 	8)
-	List_ServerStatus_server
+	( List_ServerStatus_server )
+	continue
 	;;
 	9)
-	View_server_Log
+	( View_server_Log )
+	continue
 	;;
 	10)
-	menu_client
+	( menu_client )
+	continue
+	;;
+	q|Q)
+	echo "已退出"
+	exit 0
 	;;
 	*)
-	echo "请输入正确数字 [0-10]"
+	echo "请输入正确数字 [0-10/q]"
+	continue
 	;;
 esac
+done
 }
 check_sys
 action=""

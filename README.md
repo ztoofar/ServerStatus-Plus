@@ -11,7 +11,7 @@ ServerStatus-Plus 是一套轻量级、实时的服务器状态监控系统。�
 - **服务端**：Rust + Tokio + Axum，编译为单文件静态二进制，原版网页资源直接内嵌，无需单独部署 `web` 目录。
 - **客户端**：Python 3 单文件实现，仅使用标准库，直接读取 `/proc` 与 `/sys`，无 `netstat`/`df` 子进程，自动重连。
 - **前端**：Toyo 原版静态页面，每 2 秒轮询 `/json/stats.json`，支持点击行展开内存、交换分区、硬盘与自定义信息。
-- **网络**：服务端 TCP/HTTP 同时支持 IPv4/IPv6（IPv6 不可用时自动回退 IPv4）；客户端 `family` 可选 `0`（自动）、`4`（仅 IPv4）、`6`（仅 IPv6）。
+- **网络**：服务端 TCP/HTTP 同时支持 IPv4/IPv6（IPv6 不可用时自动回退 IPv4）；客户端 `FAMILY` 可选 `0`（自动）、`4`（仅 IPv4）、`6`（仅 IPv6）。
 - **配置**：服务端可直接使用原版 Toyo 的 `config.json`（只含 `servers` 数组），也兼容包含 `listen`/`http_listen`/`site` 的扩展格式。
 - **数据**：仅使用内存态，不持久化历史数据，不依赖数据库。
 - **部署**：仓库提供 Linux amd64/arm64 预编译服务端二进制，安装脚本直接下载，用户服务器无需 Rust/Node 编译环境。
@@ -53,7 +53,7 @@ bash status.sh c   # 客户端菜单
 
 菜单项：`0` 升级脚本、`1` 安装、`2` 更新、`3` 卸载、`4/5/6` 启动/停止/重启、`7` 配置、`8` 查看信息、`9` 查看日志、`10` 切换菜单、`q` 退出。
 
-服务端与客户端可部署于同一台服务器。客户端配置中的服务端地址填写 `127.0.0.1` 即可；卸载时仅移除当前组件，保留另一端。
+服务端与客户端可部署于同一台服务器。客户端脚本顶部的 `SERVER` 填写 `127.0.0.1` 即可；卸载时仅移除当前组件，保留另一端。
 
 ### 代理安装
 
@@ -81,8 +81,7 @@ bash status.sh s --proxy http://127.0.0.1:7890
 | --- | --- |
 | `/usr/local/ServerStatus/server/sergate` | 服务端二进制（内嵌网页） |
 | `/usr/local/ServerStatus/server/config.json` | 服务端配置 |
-| `/usr/local/ServerStatus/client/sergate-client.py` | Python 客户端脚本 |
-| `/usr/local/ServerStatus/client/config.json` | 客户端配置 |
+| `/usr/local/ServerStatus/client/sergate-client.py` | Python 客户端脚本（配置在文件顶部） |
 
 服务管理：
 
@@ -104,7 +103,7 @@ tail -f /tmp/serverstatus_client.log
 
 ### 服务端
 
-配置文件为 `server/config.json`。每个节点的 `username` 必须唯一，`password` 需与客户端配置一致。
+配置文件为 `server/config.json`。每个节点的 `username` 必须唯一，`password` 需与客户端脚本中的 `PASSWORD` 一致。
 
 可以直接使用原版 Toyo 的精简格式：
 
@@ -130,28 +129,26 @@ tail -f /tmp/serverstatus_client.log
 
 ### 客户端
 
-配置文件为 `client/config.json`：
+客户端只有一个 `sergate-client.py`，不需要单独的配置文件。连接参数在文件顶部：
 
-```json
-{
-  "server": "127.0.0.1",
-  "port": 35601,
-  "username": "s01",
-  "password": "password",
-  "family": 0,
-  "interval": 1,
-  "load_mode": "loadavg",
-  "online_check_v4": "www.aliyun.com:443",
-  "online_check_v6": "www.aliyun.com:443",
-  "interfaces": []
-}
+```python
+SERVER = "127.0.0.1"
+PORT = 35601
+USERNAME = "s01"
+PASSWORD = "password"
+FAMILY = 0          # 0 自动 / 4 仅 IPv4 / 6 仅 IPv6
+INTERVAL = 1        # 上报间隔，建议 <= 25
+ONLINE_CHECK_V4 = "www.aliyun.com:443"
+ONLINE_CHECK_V6 = "www.aliyun.com:443"
+INTERFACES = []     # 留空自动选择物理网卡
 ```
 
-- `family`：`0` 自动、`4` 仅 IPv4、`6` 仅 IPv6。
-- `interval`：上报间隔秒数，默认 `1`，必须小于服务端 30 秒空闲超时（建议 `<= 25`）。
-- `load_mode`：`loadavg`（默认，系统 1 分钟平均负载，与 `uptime` 一致）或 `connections`（原版 Toyo 语义，已建立 TCP 的唯一远端 IP 数）。
-- `interfaces`：留空自动选择物理网卡；也可填写网卡名列表。
-- 修改配置后需重启客户端服务。
+可以用 `bash status.sh c` 菜单 `7` 修改 `SERVER`/`PORT`/`USERNAME`/`PASSWORD`，其余直接编辑文件顶部；修改后重启客户端服务。更新客户端时会保留文件顶部的原有设置。
+
+- `FAMILY`：`0` 自动、`4` 仅 IPv4、`6` 仅 IPv6。
+- `INTERVAL`：上报间隔秒数，默认 `1`，必须小于服务端 30 秒空闲超时（建议 `<= 25`）。
+- `INTERFACES`：留空自动选择物理网卡；也可填写网卡名列表。
+- 负载沿用原版 Toyo 语义：`/proc/net/tcp6` 中 ESTABLISHED 的唯一 IPv4 远端地址数，不是系统 load average。
 
 ## 网页数据
 

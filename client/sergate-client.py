@@ -17,13 +17,18 @@ import socket
 import sys
 import time
 
-DEFAULT_CONFIG = "/usr/local/ServerStatus/client/config.json"
-DEFAULT_SERVER = "127.0.0.1"
-DEFAULT_PORT = 35601
-DEFAULT_INTERVAL = 1
+# 客户端配置：安装脚本会修改下面四项，其余按需手动编辑。
+SERVER = "127.0.0.1"
+PORT = 35601
+USERNAME = "s01"
+PASSWORD = "password"
+FAMILY = 0
+INTERVAL = 1
+ONLINE_CHECK_V4 = "www.aliyun.com:443"
+ONLINE_CHECK_V6 = "www.aliyun.com:443"
+INTERFACES = []
+
 MAX_INTERVAL = 25
-DEFAULT_ONLINE_V4 = "www.aliyun.com:443"
-DEFAULT_ONLINE_V6 = "www.aliyun.com:443"
 
 CONNECT_TIMEOUT = 10.0
 AUTH_TIMEOUT = 10.0
@@ -66,11 +71,11 @@ class ConnectError(Exception):
 class ClientConfig(object):
     __slots__ = (
         "server", "port", "username", "password", "family", "interval",
-        "online_check_v4", "online_check_v6", "interfaces", "load_mode",
+        "online_check_v4", "online_check_v6", "interfaces",
     )
 
     def __init__(self, server, port, username, password, family, interval,
-                 online_check_v4, online_check_v6, interfaces, load_mode):
+                 online_check_v4, online_check_v6, interfaces):
         self.server = server
         self.port = port
         self.username = username
@@ -80,7 +85,6 @@ class ClientConfig(object):
         self.online_check_v4 = online_check_v4
         self.online_check_v6 = online_check_v6
         self.interfaces = interfaces
-        self.load_mode = load_mode
 
 
 class Logger(object):
@@ -109,66 +113,62 @@ class Logger(object):
         sys.stdout.flush()
 
 
-def load_config(path):
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            raw = json.load(handle)
-    except FileNotFoundError:
-        raise ConfigError("配置文件不存在: %s" % path)
-    except (OSError, ValueError) as exc:
-        raise ConfigError("无法读取配置 %s: %s" % (path, exc))
-
-    if not isinstance(raw, dict):
-        raise ConfigError("配置必须是 JSON 对象")
-
-    server = str(raw.get("server") or DEFAULT_SERVER).strip()
-    username = str(raw.get("username") or "").strip()
-    password = str(raw.get("password") or "")
+def make_config(server=SERVER, port=PORT, username=USERNAME, password=PASSWORD,
+                family=FAMILY, interval=INTERVAL,
+                online_check_v4=ONLINE_CHECK_V4, online_check_v6=ONLINE_CHECK_V6,
+                interfaces=None):
+    server = str(server).strip()
+    username = str(username).strip()
+    password = str(password)
     if not server:
-        raise ConfigError("server 不能为空")
+        raise ConfigError("SERVER 不能为空")
     if not username:
-        raise ConfigError("username 不能为空")
+        raise ConfigError("USERNAME 不能为空")
     if not password:
-        raise ConfigError("password 不能为空")
+        raise ConfigError("PASSWORD 不能为空")
     if any(ch in username + password for ch in ("\r", "\n")):
-        raise ConfigError("username/password 不能包含换行符")
+        raise ConfigError("USERNAME/PASSWORD 不能包含换行符")
 
     try:
-        port = int(raw.get("port", DEFAULT_PORT))
+        port = int(port)
     except (TypeError, ValueError):
-        raise ConfigError("port 必须是整数")
+        raise ConfigError("PORT 必须是整数")
     if not 1 <= port <= 65535:
-        raise ConfigError("port 必须在 1-65535 之间")
+        raise ConfigError("PORT 必须在 1-65535 之间")
 
     try:
-        family = int(raw.get("family", 0))
+        family = int(family)
     except (TypeError, ValueError):
-        raise ConfigError("family 必须是 0、4 或 6")
+        raise ConfigError("FAMILY 必须是 0、4 或 6")
     if family not in (0, 4, 6):
-        raise ConfigError("family 必须是 0、4 或 6")
+        raise ConfigError("FAMILY 必须是 0、4 或 6")
 
     try:
-        interval = int(raw.get("interval", DEFAULT_INTERVAL))
+        interval = int(interval)
     except (TypeError, ValueError):
-        raise ConfigError("interval 必须是整数")
+        raise ConfigError("INTERVAL 必须是整数")
     interval = max(1, interval)
     if interval > MAX_INTERVAL:
-        raise ConfigError("interval 必须小于服务端 30 秒空闲超时（建议 <= %d）" % MAX_INTERVAL)
+        raise ConfigError("INTERVAL 必须小于服务端 30 秒空闲超时（建议 <= %d）" % MAX_INTERVAL)
 
-    online_v4 = str(raw.get("online_check_v4") or DEFAULT_ONLINE_V4).strip()
-    online_v6 = str(raw.get("online_check_v6") or DEFAULT_ONLINE_V6).strip()
-    load_mode = str(raw.get("load_mode") or "loadavg").strip().lower()
-    if load_mode not in ("loadavg", "connections"):
-        raise ConfigError("load_mode 必须是 loadavg 或 connections")
-
-    raw_interfaces = raw.get("interfaces") or []
-    if not isinstance(raw_interfaces, list):
-        raw_interfaces = []
-    interfaces = [str(item) for item in raw_interfaces if str(item).strip()]
+    if interfaces is None:
+        interfaces = INTERFACES
+    if not isinstance(interfaces, (list, tuple)):
+        interfaces = []
+    interfaces = [str(item) for item in interfaces if str(item).strip()]
 
     return ClientConfig(
         server, port, username, password, family, interval,
-        online_v4, online_v6, interfaces, load_mode,
+        str(online_check_v4 or ONLINE_CHECK_V4).strip(),
+        str(online_check_v6 or ONLINE_CHECK_V6).strip(),
+        interfaces,
+    )
+
+
+def build_config():
+    return make_config(
+        SERVER, PORT, USERNAME, PASSWORD, FAMILY, INTERVAL,
+        ONLINE_CHECK_V4, ONLINE_CHECK_V6, INTERFACES,
     )
 
 
@@ -467,7 +467,14 @@ def decode_tcp_address(raw, is_ipv6):
     return socket.inet_ntoa(data[::-1])
 
 
-def parse_tcp_table(lines, is_ipv6, addresses):
+def decode_tcp6_ipv4(raw):
+    address = decode_tcp_address(raw, True)
+    if address is None or ":" in address:
+        return None
+    return address
+
+
+def parse_tcp6_ipv4(lines, addresses):
     first = True
     for line in lines:
         if first:
@@ -479,41 +486,20 @@ def parse_tcp_table(lines, is_ipv6, addresses):
         remote = fields[2]
         if ":" not in remote:
             continue
-        address = decode_tcp_address(remote.rsplit(":", 1)[0], is_ipv6)
+        address = decode_tcp6_ipv4(remote.rsplit(":", 1)[0])
         if address is not None:
             addresses.add(address)
 
 
 def read_established_load():
+    # 原版 Toyo 语义：统计 tcp6 中 ESTABLISHED 的唯一 IPv4 远端地址。
     addresses = set()
-    for path, is_ipv6 in (("/proc/net/tcp", False), ("/proc/net/tcp6", True)):
-        try:
-            with open(path, "r") as handle:
-                parse_tcp_table(handle, is_ipv6, addresses)
-        except OSError:
-            continue
-    return len(addresses)
-
-
-def parse_loadavg(text):
     try:
-        return round(float(text.split()[0]), 2)
-    except (ValueError, IndexError):
-        return 0.0
-
-
-def read_loadavg():
-    try:
-        with open("/proc/loadavg", "r") as handle:
-            return parse_loadavg(handle.readline())
+        with open("/proc/net/tcp6", "r") as handle:
+            parse_tcp6_ipv4(handle, addresses)
     except OSError:
-        return 0.0
-
-
-def read_load(config):
-    if config.load_mode == "connections":
-        return float(read_established_load())
-    return read_loadavg()
+        pass
+    return len(addresses)
 
 
 def parse_target(target):
@@ -650,13 +636,13 @@ def authenticate(sock, config):
     raise AuthError("未知网络模式")
 
 
-def build_payload(config, cpu_sampler, network_sampler, disk_sampler):
+def build_payload(cpu_sampler, network_sampler, disk_sampler):
     memory_total, memory_used, swap_total, swap_used = read_memory()
     hdd_total, hdd_used = disk_sampler.sample()
     rx_speed, tx_speed, rx_total, tx_total = network_sampler.sample()
     return {
         "uptime": read_uptime(),
-        "load": read_load(config),
+        "load": float(read_established_load()),
         "memory_total": memory_total,
         "memory_used": memory_used,
         "swap_total": swap_total,
@@ -704,7 +690,7 @@ def run(config, once, logger):
                     online = check_online(check_target, check_family)
                     last_online_check = now
 
-                payload = build_payload(config, cpu_sampler, network_sampler, disk_sampler)
+                payload = build_payload(cpu_sampler, network_sampler, disk_sampler)
                 payload[check_field] = bool(online)
                 line = "update " + json.dumps(payload, separators=(",", ":")) + "\n"
                 sock.sendall(line.encode("utf-8"))
@@ -745,10 +731,6 @@ def main(argv=None):
         description="ServerStatus-Plus monitoring client (Linux /proc)"
     )
     parser.add_argument(
-        "-c", "--config", default=DEFAULT_CONFIG,
-        help="配置文件路径（默认: %s）" % DEFAULT_CONFIG,
-    )
-    parser.add_argument(
         "--once", action="store_true",
         help="采集并发送一次后退出（用于测试）",
     )
@@ -764,7 +746,7 @@ def main(argv=None):
 
     logger = Logger(args.verbose)
     try:
-        config = load_config(args.config)
+        config = build_config()
     except ConfigError as exc:
         sys.stderr.write("配置错误: %s\n" % exc)
         return 2

@@ -2,9 +2,7 @@
 """Unit tests for pure helpers in client/sergate-client.py."""
 
 import importlib.util
-import json
 import os
-import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,30 +56,34 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(client.decode_tcp_address("0100007F", False), "127.0.0.1")
 
     def test_decode_tcp_address_ipv6(self):
-        self.assertEqual(
-            client.decode_tcp_address("0" * 32, True),
-            "::",
-        )
+        self.assertEqual(client.decode_tcp_address("0" * 32, True), "::")
         self.assertEqual(
             client.decode_tcp_address("0000000000000000ffff00000100007f", True),
             "127.0.0.1",
         )
 
-    def test_parse_tcp_table_unique_established(self):
+    def test_decode_tcp6_ipv4(self):
+        self.assertEqual(
+            client.decode_tcp6_ipv4("0000000000000000ffff00000100007f"),
+            "127.0.0.1",
+        )
+        self.assertIsNone(client.decode_tcp6_ipv4("0" * 32))
+
+    def test_parse_tcp6_ipv4_unique_established(self):
         lines = [
             "  sl  local_address rem_address   st\n",
-            "   0: 0100007F:1F90 0100007F:D431 01\n",
-            "   1: 0100007F:1F90 0200007F:D431 01\n",
-            "   2: 0100007F:1F90 0300007F:D431 0A\n",
+            "   0: 00000000000000000000000000000000:1F90 "
+            "0000000000000000ffff00000100007f:D431 01\n",
+            "   1: 00000000000000000000000000000000:1F90 "
+            "0000000000000000ffff00000100007f:D432 01\n",
+            "   2: 00000000000000000000000000000000:1F90 "
+            "00000000000000000000000000000000:D433 01\n",
+            "   3: 00000000000000000000000000000000:1F90 "
+            "0000000000000000ffff00000100007f:D434 0A\n",
         ]
         addresses = set()
-        client.parse_tcp_table(lines, False, addresses)
-        self.assertEqual(addresses, {"127.0.0.1", "127.0.0.2"})
-
-    def test_parse_loadavg(self):
-        self.assertEqual(client.parse_loadavg("0.12 0.34 0.56 1/123 4567\n"), 0.12)
-        self.assertEqual(client.parse_loadavg("1.5 1.2 0.9 2/100 9999\n"), 1.5)
-        self.assertEqual(client.parse_loadavg(""), 0.0)
+        client.parse_tcp6_ipv4(lines, addresses)
+        self.assertEqual(addresses, {"127.0.0.1"})
 
     def test_parse_target(self):
         self.assertEqual(
@@ -97,77 +99,32 @@ class MetricHelperTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
-    def write_config(self, payload):
-        handle = tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", suffix=".json", delete=False
-        )
-        try:
-            json.dump(payload, handle)
-        finally:
-            handle.close()
-        self.addCleanup(os.unlink, handle.name)
-        return handle.name
-
     def test_defaults(self):
-        path = self.write_config({
-            "server": "127.0.0.1",
-            "port": 35601,
-            "username": "s01",
-            "password": "pass",
-        })
-        config = client.load_config(path)
+        config = client.make_config()
+        self.assertEqual(config.server, "127.0.0.1")
+        self.assertEqual(config.port, 35601)
+        self.assertEqual(config.username, "s01")
+        self.assertEqual(config.password, "password")
         self.assertEqual(config.family, 0)
         self.assertEqual(config.interval, 1)
-        self.assertEqual(config.load_mode, "loadavg")
         self.assertEqual(config.online_check_v4, "www.aliyun.com:443")
         self.assertEqual(config.online_check_v6, "www.aliyun.com:443")
         self.assertEqual(config.interfaces, [])
 
     def test_missing_password(self):
-        path = self.write_config({
-            "server": "127.0.0.1",
-            "username": "s01",
-        })
         with self.assertRaises(client.ConfigError):
-            client.load_config(path)
+            client.make_config(password="")
 
     def test_interval_too_long(self):
-        path = self.write_config({
-            "server": "127.0.0.1",
-            "username": "s01",
-            "password": "pass",
-            "interval": 60,
-        })
         with self.assertRaises(client.ConfigError):
-            client.load_config(path)
+            client.make_config(interval=60)
 
     def test_family_filter(self):
-        path = self.write_config({
-            "server": "127.0.0.1",
-            "username": "s01",
-            "password": "pass",
-            "family": 6,
-        })
-        self.assertEqual(client.load_config(path).family, 6)
+        self.assertEqual(client.make_config(family=6).family, 6)
 
-    def test_load_mode_connections(self):
-        path = self.write_config({
-            "server": "127.0.0.1",
-            "username": "s01",
-            "password": "pass",
-            "load_mode": "connections",
-        })
-        self.assertEqual(client.load_config(path).load_mode, "connections")
-
-    def test_invalid_load_mode(self):
-        path = self.write_config({
-            "server": "127.0.0.1",
-            "username": "s01",
-            "password": "pass",
-            "load_mode": "bogus",
-        })
+    def test_invalid_family(self):
         with self.assertRaises(client.ConfigError):
-            client.load_config(path)
+            client.make_config(family=5)
 
 
 if __name__ == "__main__":

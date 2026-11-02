@@ -272,22 +272,77 @@ Read_config_client(){
 	client_port="$(grep -o '"port"[[:space:]]*:[[:space:]]*[0-9]*' "${client_conf}" | grep -o '[0-9]*')"
 	client_user="$(grep -o '"username"[[:space:]]*:[[:space:]]*"[^"]*"' "${client_conf}" | sed 's/.*"\([^"]*\)"$/\1/')"
 	client_password="$(grep -o '"password"[[:space:]]*:[[:space:]]*"[^"]*"' "${client_conf}" | sed 's/.*"\([^"]*\)"$/\1/')"
+	client_family="$(grep -o '"family"[[:space:]]*:[[:space:]]*[0-9]*' "${client_conf}" | grep -o '[0-9]*')"
+	client_interval="$(grep -o '"interval"[[:space:]]*:[[:space:]]*[0-9]*' "${client_conf}" | grep -o '[0-9]*')"
 }
-Write_client_config(){
-	cat > "${client_conf}" <<-EOF
-{
-  "server": "${server_s}",
-  "port": ${server_port_s},
-  "username": "${username_s}",
-  "password": "${password_s}",
-  "family": 0,
-  "interval": 1,
-  "load_mode": "loadavg",
-  "online_check_v4": "www.aliyun.com:443",
-  "online_check_v6": "www.aliyun.com:443",
-  "interfaces": []
+Read_client_settings(){
+	[[ ! -e "${client_script}" ]] && return 1
+	eval "$(python3 - "${client_script}" <<'PY'
+import ast, shlex, sys
+path = sys.argv[1]
+names = ("SERVER", "PORT", "USERNAME", "PASSWORD", "FAMILY", "INTERVAL")
+values = {}
+for line in open(path, encoding="utf-8"):
+    for name in names:
+        if line.startswith(name + " = "):
+            try:
+                values[name] = ast.literal_eval(line.split("=", 1)[1].strip())
+            except Exception:
+                pass
+for name, var in (
+    ("SERVER", "client_server"), ("PORT", "client_port"),
+    ("USERNAME", "client_user"), ("PASSWORD", "client_password"),
+    ("FAMILY", "client_family"), ("INTERVAL", "client_interval"),
+):
+    print("%s=%s" % (var, shlex.quote(str(values.get(name, "")))))
+PY
+)"
 }
-EOF
+Preserve_client_settings(){
+	local backup="$1"
+	[[ ! -e "${backup}" || ! -e "${client_script}" ]] && return 0
+	python3 - "${backup}" "${client_script}" <<'PY'
+import re, sys
+old_path, new_path = sys.argv[1:3]
+names = (
+    "SERVER", "PORT", "USERNAME", "PASSWORD", "FAMILY", "INTERVAL",
+    "ONLINE_CHECK_V4", "ONLINE_CHECK_V6", "INTERFACES",
+)
+values = {}
+for line in open(old_path, encoding="utf-8"):
+    for name in names:
+        if line.startswith(name + " = "):
+            values[name] = line.split("=", 1)[1].strip()
+text = open(new_path, encoding="utf-8").read()
+for name, value in values.items():
+    text, _count = re.subn(r"^%s = .*$" % name, "%s = %s" % (name, value), text, count=1, flags=re.M)
+open(new_path, "w", encoding="utf-8").write(text)
+PY
+}
+Write_client_settings(){
+	python3 - "${client_script}" "${server_s}" "${server_port_s}" "${username_s}" "${password_s}" "${family_s:-0}" "${interval_s:-1}" <<'PY'
+import re, sys
+path, server, port, username, password, family, interval = sys.argv[1:8]
+values = {
+    "SERVER": repr(server),
+    "PORT": str(int(port)),
+    "USERNAME": repr(username),
+    "PASSWORD": repr(password),
+    "FAMILY": str(int(family)),
+    "INTERVAL": str(int(interval)),
+}
+text = open(path, encoding="utf-8").read()
+for name, value in values.items():
+    text, count = re.subn(r"^%s = .*$" % name, "%s = %s" % (name, value), text, count=1, flags=re.M)
+    if count != 1:
+        raise SystemExit("missing %s" % name)
+open(path, "w", encoding="utf-8").write(text)
+PY
+	if [[ $? -ne 0 ]]; then
+		echo -e "${Error} 客户端配置写入失败 !"
+		return 1
+	fi
+	rm -f "${client_conf}"
 }
 Set_server(){
 	echo -e "请输入 ServerStatus 服务端的 IP/域名[server]"
@@ -622,8 +677,12 @@ Modify_ServerStatus_server_disabled(){
 }
 Set_ServerStatus_client(){
 	check_installed_client_status
+	check_client_script
+	Read_client_settings
+	family_s="${client_family:-0}"
+	interval_s="${client_interval:-1}"
 	Set_config_client
-	Write_client_config
+	Write_client_settings || exit 1
 	Restart_ServerStatus_client
 }
 Install_jq(){
@@ -669,7 +728,7 @@ Install_ServerStatus_client(){
 	echo -e "${Info} 开始下载/安装..."
 	Download_Server_Status_client
 	echo -e "${Info} 开始写入 配置..."
-	Write_client_config
+	Write_client_settings || exit 1
 	echo -e "${Info} 开始下载/安装 服务脚本(init)..."
 	Service_Server_Status_client
 	echo -e "${Info} 所有步骤 安装完毕，开始启动..."
@@ -687,9 +746,28 @@ Update_ServerStatus_server(){
 Update_ServerStatus_client(){
 	check_installed_client_status
 	check_python3
+	local old_settings="/tmp/sergate-client-settings.$$"
+	if [[ -e "${client_conf}" ]]; then
+		Read_config_client
+		server_s="${client_server}"
+		server_port_s="${client_port}"
+		username_s="${client_user}"
+		password_s="${client_password}"
+		family_s="${client_family:-0}"
+		interval_s="${client_interval:-1}"
+	elif [[ -e "${client_script}" ]]; then
+		cp -f "${client_script}" "${old_settings}"
+	fi
 	check_pid_client
 	[[ ! -z ${PID} ]] && /etc/init.d/status-client stop
 	Download_Server_Status_client
+	if [[ -e "${old_settings}" ]]; then
+		Preserve_client_settings "${old_settings}" || exit 1
+		rm -f "${old_settings}"
+	elif [[ -n "${server_s}" ]]; then
+		Write_client_settings || exit 1
+	fi
+	rm -f "${client_conf}"
 	rm -rf /etc/init.d/status-client
 	Service_Server_Status_client
 	Start_ServerStatus_client
@@ -787,7 +865,8 @@ Uninstall_ServerStatus_client(){
 }
 View_ServerStatus_client(){
 	check_installed_client_status
-	Read_config_client
+	check_client_script
+	Read_client_settings
 	clear && echo "————————————————————" && echo
 	echo -e "  ServerStatus 客户端配置信息：
  

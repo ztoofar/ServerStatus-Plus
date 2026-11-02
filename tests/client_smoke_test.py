@@ -8,6 +8,7 @@ tests/test_client.py and runs on every platform.
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -78,22 +79,33 @@ class FakeServer(object):
             raise self.error
 
 
-def write_config(host, port, family):
+def write_client_copy(host, port, family):
+    with open(CLIENT_PATH, "r", encoding="utf-8") as handle:
+        source = handle.read()
+    replacements = {
+        "SERVER": repr(host),
+        "PORT": str(port),
+        "USERNAME": repr("user"),
+        "PASSWORD": repr("pass"),
+        "FAMILY": str(family),
+        "ONLINE_CHECK_V4": repr("127.0.0.1:9"),
+        "ONLINE_CHECK_V6": repr("127.0.0.1:9"),
+    }
+    for name, value in replacements.items():
+        source, count = re.subn(
+            r"^%s = .*$" % name,
+            "%s = %s" % (name, value),
+            source,
+            count=1,
+            flags=re.M,
+        )
+        if count != 1:
+            raise AssertionError("missing constant %s" % name)
     handle = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", suffix=".json", delete=False
+        mode="w", encoding="utf-8", suffix=".py", delete=False
     )
     try:
-        json.dump({
-            "server": host,
-            "port": port,
-            "username": "user",
-            "password": "pass",
-            "family": family,
-            "interval": 1,
-            "online_check_v4": "127.0.0.1:9",
-            "online_check_v6": "127.0.0.1:9",
-            "interfaces": [],
-        }, handle)
+        handle.write(source)
     finally:
         handle.close()
     return handle.name
@@ -107,11 +119,11 @@ class ClientSmokeTests(unittest.TestCase):
         except OSError as exc:
             self.skipTest("cannot bind test server: %s" % exc)
 
-        config_path = write_config(server.host, server.port, client_family)
-        self.addCleanup(os.unlink, config_path)
+        client_path = write_client_copy(server.host, server.port, client_family)
+        self.addCleanup(os.unlink, client_path)
         try:
             completed = subprocess.run(
-                [sys.executable, CLIENT_PATH, "-c", config_path, "--once"],
+                [sys.executable, client_path, "--once"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=20,

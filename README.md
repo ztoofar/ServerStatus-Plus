@@ -23,7 +23,9 @@
 wget --header='Accept: application/vnd.github.raw' -O status.sh \
   'https://api.github.com/repos/ztoofar/ServerStatus-Plus/contents/status.sh?ref=main'
 chmod +x status.sh
+```
 
+```bash
 bash status.sh s   # 服务端菜单
 bash status.sh c   # 客户端菜单
 ```

@@ -76,35 +76,58 @@ class MetricHelperTests(unittest.TestCase):
         self.assertFalse(client.is_local_address("192.168.1.2"))
         self.assertFalse(client.is_local_address("2001:db8::1"))
 
-    def test_parse_tcp_table_unique_remote(self):
-        ipv4_lines = [
-            "  sl  local_address rem_address   st\n",
-            "   0: 0100007F:1F90 0100007F:D431 01\n",
-            "   1: 0100007F:1F90 0201A8C0:D432 01\n",
-            "   2: 0100007F:1F90 0201A8C0:D433 01\n",
-            "   3: 0100007F:1F90 0100000A:D434 01\n",
-            "   4: 0100007F:1F90 0100000A:D435 0A\n",
-        ]
-        addresses = set()
-        client.parse_tcp_table(ipv4_lines, False, addresses)
-        self.assertEqual(addresses, {"192.168.1.2", "10.0.0.1"})
+    def test_parse_tcp_port(self):
+        self.assertEqual(client.parse_tcp_port("0100007F:1F90"), 0x1F90)
+        self.assertEqual(client.parse_tcp_port("00000000000000000000000000000000:0050"), 80)
+        self.assertIsNone(client.parse_tcp_port("missing"))
+        self.assertIsNone(client.parse_tcp_port("0100007F:ZZZZ"))
 
-        ipv6_lines = [
+    def test_parse_listen_ports(self):
+        lines = [
+            "  sl  local_address rem_address   st\n",
+            "   0: 00000000:1F90 00000000:0000 0A\n",
+            "   1: 0100007F:0035 00000000:0000 0A\n",
+            "   2: 0500000A:1F90 0201A8C0:D431 01\n",
+            "   3: 00000000:0016 00000000:0000 06\n",
+        ]
+        self.assertEqual(client.parse_listen_ports(lines), {0x1F90, 0x0035})
+
+    def test_established_peers_only_count_inbound_service_connections(self):
+        lines = [
+            "  sl  local_address rem_address   st\n",
+            "   0: 00000000:1F90 00000000:0000 0A\n",
+            # Inbound to the listening port.
+            "   1: 0500000A:1F90 0201A8C0:D431 01\n",
+            # Duplicate peer, counted once.
+            "   2: 0500000A:1F90 0201A8C0:D432 01\n",
+            # Outbound connection from an ephemeral local port.
+            "   3: 0500000A:D431 0100000A:0050 01\n",
+            # Established connection to a local port that is not listening.
+            "   4: 0500000A:2328 0301A8C0:D433 01\n",
+            # Loopback peer excluded.
+            "   5: 0500000A:1F90 0100007F:D434 01\n",
+        ]
+        ports = client.parse_listen_ports(lines)
+        addresses = set()
+        client.parse_established_peers(lines, False, ports, addresses)
+        self.assertEqual(addresses, {"192.168.1.2"})
+
+    def test_established_peers_ipv6_listener(self):
+        lines = [
             "  sl  local_address rem_address   st\n",
             "   0: 00000000000000000000000000000000:1F90 "
-            "0000000000000000ffff00000100007f:D431 01\n",
+            "00000000000000000000000000000000:0000 0A\n",
             "   1: 00000000000000000000000000000000:1F90 "
-            "0000000000000000ffff00000301a8c0:D432 01\n",
+            "0000000000000000ffff00000301a8c0:D431 01\n",
             "   2: 00000000000000000000000000000000:1F90 "
-            "b80d0120000000000000000001000000:D433 01\n",
-            "   3: 00000000000000000000000000000000:1F90 "
-            "00000000000000000000000000000000:D434 01\n",
+            "b80d0120000000000000000001000000:D432 01\n",
+            "   3: 00000000000000000000000000000000:D433 "
+            "b80d0120000000000000000002000000:0050 01\n",
         ]
-        client.parse_tcp_table(ipv6_lines, True, addresses)
-        self.assertEqual(
-            addresses,
-            {"192.168.1.2", "10.0.0.1", "192.168.1.3", "2001:db8::1"},
-        )
+        ports = client.parse_listen_ports(lines)
+        addresses = set()
+        client.parse_established_peers(lines, True, ports, addresses)
+        self.assertEqual(addresses, {"192.168.1.3", "2001:db8::1"})
 
 
 class FakeStat(object):

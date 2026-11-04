@@ -450,7 +450,39 @@ def is_local_address(address):
     return address in ("0.0.0.0", "::") or address == "::1" or address.startswith("127.")
 
 
-def parse_tcp_table(lines, is_ipv6, addresses):
+def parse_tcp_port(entry):
+    """Return the port of a /proc/net/tcp ``address:port`` field."""
+    if ":" not in entry:
+        return None
+    try:
+        return int(entry.rsplit(":", 1)[1], 16)
+    except ValueError:
+        return None
+
+
+def parse_listen_ports(lines):
+    """Return the local ports in LISTEN state from one tcp table."""
+    ports = set()
+    first = True
+    for line in lines:
+        if first:
+            first = False
+            continue
+        fields = line.split()
+        if len(fields) < 4 or fields[3] != "0A":
+            continue
+        port = parse_tcp_port(fields[1])
+        if port is not None:
+            ports.add(port)
+    return ports
+
+
+def parse_established_peers(lines, is_ipv6, listening_ports, addresses):
+    """Collect peers of established connections to local listening ports.
+
+    Outbound connections use an ephemeral local port, so filtering the local
+    port against the LISTEN set keeps inbound service connections only.
+    """
     first = True
     for line in lines:
         if first:
@@ -458,6 +490,8 @@ def parse_tcp_table(lines, is_ipv6, addresses):
             continue
         fields = line.split()
         if len(fields) < 4 or fields[3] != "01":
+            continue
+        if parse_tcp_port(fields[1]) not in listening_ports:
             continue
         remote = fields[2]
         if ":" not in remote:
@@ -468,14 +502,22 @@ def parse_tcp_table(lines, is_ipv6, addresses):
 
 
 def read_established_load():
-    # 负载：连接到本机的唯一远端 IPv4/IPv6 地址数（排除回环）。
-    addresses = set()
+    # 负载：实际连接到本机监听端口的唯一远端 IPv4/IPv6 地址数（排除回环）。
+    tables = []
     for path, is_ipv6 in (("/proc/net/tcp", False), ("/proc/net/tcp6", True)):
         try:
             with open(path, "r") as handle:
-                parse_tcp_table(handle, is_ipv6, addresses)
+                tables.append((handle.readlines(), is_ipv6))
         except OSError:
             continue
+
+    listening_ports = set()
+    for lines, _is_ipv6 in tables:
+        listening_ports.update(parse_listen_ports(lines))
+
+    addresses = set()
+    for lines, is_ipv6 in tables:
+        parse_established_peers(lines, is_ipv6, listening_ports, addresses)
     return len(addresses)
 
 

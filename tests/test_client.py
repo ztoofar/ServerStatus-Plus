@@ -26,8 +26,9 @@ class MetricHelperTests(unittest.TestCase):
         self.assertEqual(values["MemAvailable"], 512000)
         self.assertEqual(values["SwapFree"], 524288)
 
-    def test_memory_values_exclude_cache(self):
-        # Same accounting as free(1) and the upstream ServerStatus client.
+    def test_memory_values_use_mem_available(self):
+        # Used memory is MemTotal - MemAvailable, matching free(1); cache and
+        # reclaimable slab must not be subtracted a second time.
         values = {
             "MemTotal": 1000,
             "MemFree": 100,
@@ -38,15 +39,26 @@ class MetricHelperTests(unittest.TestCase):
             "SwapTotal": 100,
             "SwapFree": 40,
         }
-        self.assertEqual(client.memory_values(values), (1000, 680, 100, 60))
+        self.assertEqual(client.memory_values(values), (1000, 600, 100, 60))
+
+    def test_memory_values_fallback_without_mem_available(self):
+        values = {
+            "MemTotal": 1000,
+            "MemFree": 100,
+            "Buffers": 50,
+            "Cached": 150,
+            "SReclaimable": 20,
+            "Shmem": 20,
+            "SwapTotal": 100,
+            "SwapFree": 40,
+        }
+        # available = 100 + 50 + 150 + 20 - 20 = 300, so used = 700.
+        self.assertEqual(client.memory_values(values), (1000, 700, 100, 60))
 
     def test_memory_values_clamped(self):
         values = {
             "MemTotal": 1000,
-            "MemFree": 900,
-            "Buffers": 100,
-            "Cached": 100,
-            "SReclaimable": 100,
+            "MemAvailable": 5000,
         }
         _total, used, swap_total, swap_used = client.memory_values(values)
         self.assertEqual(used, 0)
